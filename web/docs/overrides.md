@@ -5,7 +5,7 @@ everything a person edits. The detail snapshot (`MONEY_DETAIL_DB`) is opened
 read-only and never written. Any other reader (for example the Python
 publisher) must implement the evaluator below exactly so both agree.
 
-Schema version 2. `schema_version(version INTEGER NOT NULL)` holds one row.
+Schema version 3. `schema_version(version INTEGER NOT NULL)` holds one row.
 A change to any table or to evaluator behaviour bumps the version.
 
 ## Tables
@@ -19,7 +19,8 @@ CREATE TABLE txn_overrides(
   note TEXT,                -- NULL or text, never published anywhere
   hidden INTEGER,           -- NULL: no override; 0/1
   reviewed INTEGER,         -- NULL: no override; 0/1
-  updated_at TEXT NOT NULL  -- ISO UTC
+  updated_at TEXT NOT NULL, -- ISO UTC
+  date TEXT                 -- v3; NULL: no override; YYYY-MM-DD
 );
 CREATE TABLE rules(
   id TEXT PRIMARY KEY,      -- 'rule_' + random hex
@@ -74,6 +75,14 @@ Split amounts are non-zero, share the transaction's sign and sum exactly to its
 amount; there are zero or at least two. Hidden still applies to the whole
 transaction, and the merchant is unchanged.
 
+### Dates (v3)
+
+A non-NULL `txn_overrides.date` replaces the snapshot date for every period:
+months, budgets, reports, merchant windows and the transaction list. It must
+be a real calendar day in years 0001-9999. Rules never set it, matching and
+transfer pairing keep the snapshot date, and the snapshot date stays visible
+as the bank's date. The v2 to v3 migration only adds the column.
+
 ### Tags
 
 Tags are app-only. A transaction's tags are the union of the tags added by every
@@ -125,7 +134,8 @@ For each transaction:
    (no chaining).
 4. Per field, the **first** matching rule that sets that field wins; later rules
    can still set other fields. Tags are the union over all matching rules.
-5. Then each non-NULL column of `txn_overrides` replaces the field.
+5. Then each non-NULL column of `txn_overrides` replaces the field, including
+   the date.
 6. Splits, when present, allocate the amount across categories.
 
 A rule whose stored JSON fails validation (for example written by a newer
