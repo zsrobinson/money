@@ -91,8 +91,7 @@ explicitly enabled in both sync and server env; the default snapshot stores none
 
 The private transaction store adds only a verified normalized business label. No
 person/unknown counterparty, username or note is retained. Missing business names
-may use conservative curated descriptor patterns; raw descriptions are discarded
-before persistence. Venmo never supplies merchant labels. A separate `merchants`
+may use conservative curated descriptor patterns; original descriptions are discarded by the aggregate adapter. The isolated web-only tables retain the selected transaction name and merchant fields for the private app. Venmo never supplies merchant labels. A separate `merchants`
 snapshot table contains folded, precomputed calendar windows and merchant-level
 recurrence statistics. It has no day, provider/account id or individual amount.
 The SQL publisher groups across enabled sources and folds counts below max(2,
@@ -115,3 +114,20 @@ used only for all because their stored attribution is source-level. Fixed window
 bounds remain shared across scopes, including the all-history observed span.
 Account scope is assigned before merchant publication; unknown private refs fail
 with a fixed message and leave the prior snapshot in place.
+
+
+## Web detail and edits
+
+Sync publishes a separate credential-free detail snapshot for the web identity.
+The aggregate server cannot read this snapshot, the app database or private sync
+state. Explicit private web fields never expand the MCP tool/response schemas.
+Account display names and selected descriptions are retained only for the web
+surface; peer names, notes and counterparties remain discarded in both surfaces.
+
+The app owns reporting overrides with a versioned deterministic evaluator.
+Rules match snapshot values; the first matching action wins per field, then
+explicit transaction edits win. Hidden transactions leave reporting; splits
+allocate the original signed amount without multiplying merchant purchase counts.
+Custom category labels map to owned parent codes for aggregate reporting. Account
+net-worth exclusions affect net worth only, retaining balances and cash flow.
+Generated MCP labels never use app display names, notes or arbitrary edits.

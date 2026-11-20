@@ -74,7 +74,7 @@ holdings may share one Item. Pending transactions are excluded from publication.
 Private credentials/state are outside Git. Separate system users separate sync
 secrets/raw stripped records from the MCP's aggregate-only snapshot. Provider
 account names are fingerprinted for matching and replaced with generated labels;
-descriptions, person counterparties, routing/owner/contact fields are not persisted.
+person counterparties and routing/owner/contact fields are not persisted. The web-only tables retain the explicitly selected transaction descriptions and account display fields.
 Only verified normalized business names or conservative public-brand fallback labels are retained privately for merchant aggregates.
 No account numbers except optional last four; no financial writes exist. Link's
 CSRF/same-host helper binds 127.0.0.1:8768, warns on duplicate institutions and
@@ -164,8 +164,7 @@ Descriptors containing personal-payment rails, honorific/name patterns, email
 addresses or unrecognized extra words are rejected. Missing business evidence
 means Other. Provider location-only labels are rejected when they match structured
 location fields. Conservative rules may omit genuine businesses and cannot prove
-that every upstream classification is correct. No raw descriptor is persisted,
-even in private state; only the normalized label/provenance is retained privately.
+that every upstream classification is correct. Descriptor normalization never publishes raw text. Web-only ingestion separately retains the selected name field; original_description remains ephemeral.
 
 `merchant_source` distinguishes provider_name, descriptor_fallback, mixed and
 unknown. Unknown posted non-Venmo spending is now included in Other, rather than

@@ -230,11 +230,12 @@ class Queries:
         key={'type':'a.type','account':'a.id','institution':'a.institution'}[group_by]
         label='a.display_name' if group_by=='account' else key
         where,args=self._filters(account_ids,institution,scope=scope)
+        excluded='a.exclude_net_worth' if 'exclude_net_worth' in {r[1] for r in db.execute('PRAGMA table_info(accounts)')} else '0'
         where+=" AND a.availability!='historical'"
         rows=[dict(r) for r in db.execute(f'''SELECT {key} AS 'group',{label} AS label,currency,
           SUM(CASE WHEN type NOT IN ('credit','loan') THEN current ELSE 0 END) AS assets,
           SUM(CASE WHEN type IN ('credit','loan') THEN current ELSE 0 END) AS liabilities,
-          SUM(CASE WHEN type IN ('credit','loan') THEN -current ELSE current END) AS net_worth,
+          SUM(CASE WHEN {excluded}=1 THEN 0 WHEN type IN ('credit','loan') THEN -current ELSE current END) AS net_worth,
           SUM(CASE WHEN type='depository' THEN current ELSE 0 END) AS cash,
           SUM(CASE WHEN type='investment' THEN current ELSE 0 END) AS invested,
           SUM(CASE WHEN type='credit' THEN current ELSE 0 END) AS credit_owed,
@@ -242,7 +243,7 @@ class Queries:
         # Totals are computed independently in SQL, retaining unknown counts per currency.
         totals=[dict(r) for r in db.execute(f'''SELECT currency,SUM(CASE WHEN type NOT IN ('credit','loan') THEN current ELSE 0 END) AS assets,
           SUM(CASE WHEN type IN ('credit','loan') THEN current ELSE 0 END) AS liabilities,
-          SUM(CASE WHEN type IN ('credit','loan') THEN -current ELSE current END) AS net_worth,
+          SUM(CASE WHEN {excluded}=1 THEN 0 WHEN type IN ('credit','loan') THEN -current ELSE current END) AS net_worth,
           SUM(CASE WHEN type='depository' THEN current ELSE 0 END) AS cash,
           SUM(CASE WHEN type='investment' THEN current ELSE 0 END) AS invested,
           SUM(CASE WHEN type='credit' THEN current ELSE 0 END) AS credit_owed,COUNT(*)-COUNT(current) AS unknown_balances
@@ -250,7 +251,7 @@ class Queries:
         return {'group_by':group_by,'groups':rows,'totals':totals}
 
     def balance_summary(self,group_by:BalanceGroup='type',account_ids:list[str]|None=None,institution:str|None=None,scope:Scope='all') -> dict:
-        """Scope all (default) includes every account; own excludes privately marked separate accounts; separate includes only those accounts. Membership reflects the last sync. Answer net-worth and balance questions by type, account or institution. Decimal currency units; assets/cash/invested positive, liabilities and credit_owed positive amounts owed (negative for an actual credit balance), net_worth=assets-liabilities. Excludes historical accounts and counts unknown balances (including statement wallets) instead of inventing zero; totals with unknown_balances are partial. Investments use account balances, never balance plus holdings. No currency conversion."""
+        """Scope all (default) includes every account; own excludes privately marked separate accounts; separate includes only those accounts. Membership reflects the last sync. Answer net-worth and balance questions by type, account or institution. Decimal currency units; assets/cash/invested positive, liabilities and credit_owed positive amounts owed (negative for an actual credit balance), net_worth follows private account exclusions; other balances retain all accounts. Excludes historical accounts and counts unknown balances (including statement wallets) instead of inventing zero; totals with unknown_balances are partial. Investments use account balances, never balance plus holdings. No currency conversion."""
         return self._read(lambda db,sources:self._balances(db,group_by,account_ids,institution,scope))
 
     def holdings(self,group_by:HoldingGroup='security',account_ids:list[str]|None=None,institution:str|None=None) -> dict:

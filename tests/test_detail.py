@@ -43,7 +43,7 @@ def test_overrides_change_aggregate_without_disclosing_edits(snapshot,tmp_path,m
     db,aggregate=snapshot
     app=tmp_path/'app.sqlite'
     with sqlite3.connect(app) as edits:
-        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(2);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER);')
+        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(2);CREATE TABLE account_overrides(account_id TEXT,exclude_net_worth INTEGER);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER);')
         edits.execute('INSERT INTO txn_overrides VALUES(?,?,?,?,?)',(opaque('txn','bank','2'),'shopping','PRIVATE EDIT DISPLAY SENTINEL',0,1))
         edits.execute('INSERT INTO txn_overrides VALUES(?,?,?,?,?)',(opaque('txn','bank','3'),None,None,1,0))
     monkeypatch.setenv('MONEY_APP_DB',str(app))
@@ -61,7 +61,9 @@ def test_custom_category_splits_map_to_owned_totals(snapshot,tmp_path,monkeypatc
     db,aggregate=snapshot
     app=tmp_path/'app.sqlite'
     with sqlite3.connect(app) as edits:
-        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(2);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER);')
+        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(2);CREATE TABLE account_overrides(account_id TEXT,exclude_net_worth INTEGER);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER);')
+        aid=db.execute("SELECT ref FROM account_alias WHERE provider_ref='check' AND item='bank'").fetchone()[0]
+        edits.execute('INSERT INTO account_overrides VALUES(?,1)',(aid,))
         edits.execute('INSERT INTO categories VALUES(?,?)',('cat_fixture','shopping'))
         edits.executemany('INSERT INTO txn_splits VALUES(?,?,?,?)',[(opaque('txn','bank','2'),0,-6000,'cat_fixture'),(opaque('txn','bank','2'),1,-4000,'food')])
     monkeypatch.setenv('MONEY_APP_DB',str(app));aggregate_publish(db,aggregate)
@@ -69,6 +71,10 @@ def test_custom_category_splits_map_to_owned_totals(snapshot,tmp_path,monkeypatc
         assert public.execute("SELECT SUM(spending) FROM daily WHERE category='shopping'").fetchone()==(60.0,)
         assert public.execute("SELECT SUM(spending) FROM daily WHERE category='food' AND day>='2026-11-01'").fetchone()==(50.0,)
     assert b'cat_fixture' not in aggregate.read_bytes()
+    q=Queries(aggregate)
+    assert q.balance_summary()['data']['totals'][0]['net_worth']==2800
+    assert q.balance_summary()['data']['totals'][0]['cash']==2000
+    assert any(a['id']==aid for a in q.list_accounts()['data'])
 
 
 def test_normalization_matches_shared_web_vectors():

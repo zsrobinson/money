@@ -159,6 +159,9 @@ def _publish(db, path, sources=None):
         separate=separate_accounts(db)
         out.execute("ALTER TABLE accounts ADD COLUMN scope TEXT NOT NULL DEFAULT 'own'")
         out.executemany("UPDATE accounts SET scope='separate' WHERE id=?",[(ref,) for ref in separate])
+        out.execute('ALTER TABLE accounts ADD COLUMN exclude_net_worth INTEGER NOT NULL DEFAULT 0')
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='networth_exclusions'").fetchone():
+            out.executemany('UPDATE accounts SET exclude_net_worth=1 WHERE id=?',db.execute('SELECT account_id FROM networth_exclusions'))
         publish_merchants(db,out)
         out.commit(); out.close()
         os.chmod(temp,0o640)

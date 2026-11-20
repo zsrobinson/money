@@ -58,11 +58,14 @@ def reporting_store(db, app_path):
             if [r[0] for r in app.execute('SELECT version FROM schema_version')]!=[2]:raise ValueError('Unsupported app override schema')
             rules=[(json.loads(r['match_json']),json.loads(r['action_json'])) for r in app.execute('SELECT match_json,action_json FROM rules WHERE enabled=1 ORDER BY position,id')]
             edits={r['txn_id']:dict(r) for r in app.execute('SELECT txn_id,category,merchant,hidden,reviewed FROM txn_overrides')}
+            excluded=[r[0] for r in app.execute('SELECT account_id FROM account_overrides WHERE exclude_net_worth=1')]
             parents={r['code']:r['parent'] for r in app.execute('SELECT code,parent FROM categories') if r['code'] not in CATEGORIES}
             splits={}
             for r in app.execute('SELECT txn_id,idx,amount_cents,category FROM txn_splits ORDER BY txn_id,idx'):
                 splits.setdefault(r['txn_id'],[]).append(dict(r))
         db.commit();db.backup(copy)
+        copy.execute('CREATE TEMP TABLE networth_exclusions(account_id TEXT PRIMARY KEY)')
+        copy.executemany('INSERT INTO networth_exclusions VALUES(?)',[(aid,) for aid in excluded])
         copy.execute('CREATE TEMP TABLE effective_categories(id TEXT PRIMARY KEY,category TEXT)')
         copy.execute('CREATE TEMP TABLE reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
         def owned(code):
