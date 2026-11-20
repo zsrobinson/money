@@ -1,7 +1,21 @@
+import { readFileSync } from "node:fs"
 import type { Model } from "./model.ts"
 
+/** Sync outcome marker written by the sync unit: {last_attempt_at, success}. Never financial data. */
+export function syncHealth(path: string | undefined) {
+  if (!path) return undefined
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { last_attempt_at?: unknown; success?: unknown }
+    const at = Number(raw.last_attempt_at)
+    return { success: raw.success === true ? 1 : 0, lastAttempt: Number.isFinite(at) && at > 0 ? at : 0 }
+  } catch {
+    // Missing or unreadable before the first sync counts as not yet successful.
+    return { success: 0, lastAttempt: 0 }
+  }
+}
+
 /** Freshness and failure gauges. Bounded labels only: no ids, names or amounts. */
-export function moneyMetrics(model: Model, errors: Map<string, number>) {
+export function moneyMetrics(model: Model, errors: Map<string, number>, syncHealthFile?: string) {
   const lines: string[] = []
   const gauge = (name: string, value: number, labels = "") => {
     lines.push(`${name}${labels ? `{${labels}}` : ""} ${Number.isFinite(value) ? value : 0}`)
@@ -46,6 +60,13 @@ export function moneyMetrics(model: Model, errors: Map<string, number>) {
   for (const [status, count] of Object.entries(statuses)) gauge("money_sources", count, `status="${status}"`)
   lines.push("# TYPE money_source_last_success_age_seconds_max gauge")
   gauge("money_source_last_success_age_seconds_max", oldestSuccess)
+  const sync = syncHealth(syncHealthFile)
+  if (sync) {
+    lines.push("# TYPE money_sync_success gauge")
+    gauge("money_sync_success", sync.success)
+    lines.push("# TYPE money_sync_last_attempt_timestamp_seconds gauge")
+    gauge("money_sync_last_attempt_timestamp_seconds", sync.lastAttempt)
+  }
   lines.push("# TYPE money_api_errors_total counter")
   for (const [route, count] of errors) gauge("money_api_errors_total", count, `route=${JSON.stringify(route)}`)
   return lines.join("\n") + "\n"

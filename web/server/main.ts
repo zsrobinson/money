@@ -54,7 +54,7 @@ const app = new Hono()
 app.get("/metrics", async (c) => {
   const base = await shell.fetch(c.req.raw)
   if (!base.ok) return base
-  return c.text((await base.text()) + moneyMetrics(model, errors), 200, {
+  return c.text((await base.text()) + moneyMetrics(model, errors, process.env.MONEY_SYNC_HEALTH_FILE), 200, {
     "Content-Type": "text/plain; version=0.0.4",
   })
 })
