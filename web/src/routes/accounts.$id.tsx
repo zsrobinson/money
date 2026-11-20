@@ -110,7 +110,7 @@ function AccountPage() {
             {meta.map((m, i) => (
               <span key={i} className="flex items-center gap-1.5 tabular-nums">
                 {i > 0 ? (
-                  <span aria-hidden className="text-border">
+                  <span aria-hidden className="text-muted-foreground/60">
                     ·
                   </span>
                 ) : null}

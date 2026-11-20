@@ -247,7 +247,7 @@ function Transactions() {
             onClick={() => setFiltersOpen((v) => !v)}
           >
             <SlidersHorizontalIcon data-icon="inline-start" />
-            Filters
+            <span className="max-sm:sr-only">Filters</span>
           </Button>
         </div>
         {filtersOpen ? (

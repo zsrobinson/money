@@ -391,7 +391,7 @@ function TagRow({ tag: t }: { tag: Tag }) {
       />
       <Input
         aria-label={`Name for ${t.name}`}
-        className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-64"
+        className="h-8 min-w-24 flex-1 border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-64"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() =>
@@ -405,7 +405,7 @@ function TagRow({ tag: t }: { tag: Tag }) {
         aria-label={`Colour for ${t.name}`}
         size="sm"
         align="end"
-        className="ml-auto w-28 shrink-0"
+        className="ml-auto w-24 shrink-0"
         value={t.hue ?? ""}
         placeholder="No colour"
         onChange={(v) => patch.mutate({ hue: v || null })}

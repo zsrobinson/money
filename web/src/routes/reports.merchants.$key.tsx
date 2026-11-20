@@ -146,7 +146,6 @@ function MerchantDetail() {
                 <TxnRows
                   items={d.transactions.slice(0, 15)}
                   primary="account"
-                  grouped
                 />
               </SectionCard>
             </PageStack>
