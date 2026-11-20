@@ -8,6 +8,7 @@ const vectors = JSON.parse(
 ) as { input: string; expected: string }[]
 
 test("normalization matches Python's shared vectors exactly", () => {
-  for (const v of vectors) assert.equal(normalizeText(v.input), v.expected, JSON.stringify(v.input))
+  for (const v of vectors)
+    assert.equal(normalizeText(v.input), v.expected, JSON.stringify(v.input))
   assert.equal(normalizeText(null), "")
 })

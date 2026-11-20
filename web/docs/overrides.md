@@ -89,25 +89,25 @@ hides it from app lists and pickers. `display_name` never leaves the app.
 
 `match_json`, every present key must match (AND); an empty object matches nothing:
 
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `merchant_contains` | string | normalized substring of normalized `coalesce(merchant, description, '')` |
-| `merchant_equals` | string | normalized equality with the same text |
-| `account_id` | string | equals `account_id` |
-| `category` | string | equals the snapshot `category` |
-| `direction` | `"in"` \| `"out"` | `in`: `amount_cents > 0`; `out`: `amount_cents < 0` |
-| `amount_min_cents` | integer | `abs(amount_cents) >= value` |
-| `amount_max_cents` | integer | `abs(amount_cents) <= value` |
+| Key                 | Type              | Meaning                                                                  |
+| ------------------- | ----------------- | ------------------------------------------------------------------------ |
+| `merchant_contains` | string            | normalized substring of normalized `coalesce(merchant, description, '')` |
+| `merchant_equals`   | string            | normalized equality with the same text                                   |
+| `account_id`        | string            | equals `account_id`                                                      |
+| `category`          | string            | equals the snapshot `category`                                           |
+| `direction`         | `"in"` \| `"out"` | `in`: `amount_cents > 0`; `out`: `amount_cents < 0`                      |
+| `amount_min_cents`  | integer           | `abs(amount_cents) >= value`                                             |
+| `amount_max_cents`  | integer           | `abs(amount_cents) <= value`                                             |
 
 `action_json`, at least one key:
 
-| Key | Type | Effect |
-| --- | --- | --- |
-| `category` | string | set category |
-| `merchant` | string | set display merchant |
-| `hide` | boolean | set hidden |
-| `mark_reviewed` | boolean | set reviewed |
-| `tags` | string[] | add these tag ids |
+| Key             | Type     | Effect               |
+| --------------- | -------- | -------------------- |
+| `category`      | string   | set category         |
+| `merchant`      | string   | set display merchant |
+| `hide`          | boolean  | set hidden           |
+| `mark_reviewed` | boolean  | set reviewed         |
+| `tags`          | string[] | add these tag ids    |
 
 Normalization: `nfkc(casefold(nfkc(s)))` with full Unicode case folding
 (Python `str.casefold()`; the server uses a table generated from it, not

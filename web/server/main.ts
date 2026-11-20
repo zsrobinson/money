@@ -25,7 +25,8 @@ if (process.env.MONEY_MIGRATE_ONLY === "true") {
   process.exit(0)
 }
 
-const today = () => new Date().toLocaleDateString("en-CA", { timeZone: process.env.TZ || "UTC" })
+const today = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: process.env.TZ || "UTC" })
 const model = createModel(detailStore(required("MONEY_DETAIL_DB")), db, today)
 const errors = new Map<string, number>()
 const scrape = (r: Request) =>
@@ -36,7 +37,8 @@ const shell = createShellServer({
   issuer: required("ACCESS_ISSUER"),
   audience: required("ACCESS_AUD"),
   publicOrigin: required("PUBLIC_ORIGIN"),
-  services: () => JSON.parse(readFileSync(required("SERVICE_MANIFEST"), "utf8")),
+  services: () =>
+    JSON.parse(readFileSync(required("SERVICE_MANIFEST"), "utf8")),
   metrics: { authorize: scrape },
 })
 shell.use("/api/*", async (c, next) => {
@@ -54,9 +56,14 @@ const app = new Hono()
 app.get("/metrics", async (c) => {
   const base = await shell.fetch(c.req.raw)
   if (!base.ok) return base
-  return c.text((await base.text()) + moneyMetrics(model, errors, process.env.MONEY_SYNC_HEALTH_FILE), 200, {
-    "Content-Type": "text/plain; version=0.0.4",
-  })
+  return c.text(
+    (await base.text()) +
+      moneyMetrics(model, errors, process.env.MONEY_SYNC_HEALTH_FILE),
+    200,
+    {
+      "Content-Type": "text/plain; version=0.0.4",
+    }
+  )
 })
 app.all("*", (c) => shell.fetch(c.req.raw))
 

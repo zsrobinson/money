@@ -5,9 +5,15 @@ import type { Model } from "./model.ts"
 export function syncHealth(path: string | undefined) {
   if (!path) return undefined
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as { last_attempt_at?: unknown; success?: unknown }
+    const raw = JSON.parse(readFileSync(path, "utf8")) as {
+      last_attempt_at?: unknown
+      success?: unknown
+    }
     const at = Number(raw.last_attempt_at)
-    return { success: raw.success === true ? 1 : 0, lastAttempt: Number.isFinite(at) && at > 0 ? at : 0 }
+    return {
+      success: raw.success === true ? 1 : 0,
+      lastAttempt: Number.isFinite(at) && at > 0 ? at : 0,
+    }
   } catch {
     // Missing or unreadable before the first sync counts as not yet successful.
     return { success: 0, lastAttempt: 0 }
@@ -15,15 +21,26 @@ export function syncHealth(path: string | undefined) {
 }
 
 /** Freshness and failure gauges. Bounded labels only: no ids, names or amounts. */
-export function moneyMetrics(model: Model, errors: Map<string, number>, syncHealthFile?: string) {
+export function moneyMetrics(
+  model: Model,
+  errors: Map<string, number>,
+  syncHealthFile?: string
+) {
   const lines: string[] = []
   const gauge = (name: string, value: number, labels = "") => {
-    lines.push(`${name}${labels ? `{${labels}}` : ""} ${Number.isFinite(value) ? value : 0}`)
+    lines.push(
+      `${name}${labels ? `{${labels}}` : ""} ${Number.isFinite(value) ? value : 0}`
+    )
   }
-  let up = 0
+  let up: number
   let generated = 0
   let schema = 0
-  const statuses: Record<string, number> = { healthy: 0, stale: 0, error: 0, disabled: 0 }
+  const statuses: Record<string, number> = {
+    healthy: 0,
+    stale: 0,
+    error: 0,
+    disabled: 0,
+  }
   let oldestSuccess = 0
   try {
     const detail = model.store.get()
@@ -35,7 +52,8 @@ export function moneyMetrics(model: Model, errors: Map<string, number>, syncHeal
       const key = s.status in statuses ? s.status : "error"
       statuses[key]++
       const last = s.lastSuccessAt ? Date.parse(s.lastSuccessAt) / 1000 : 0
-      if (s.status !== "disabled") oldestSuccess = Math.max(oldestSuccess, last ? now - last : now)
+      if (s.status !== "disabled")
+        oldestSuccess = Math.max(oldestSuccess, last ? now - last : now)
     }
   } catch {
     up = 0
@@ -51,13 +69,17 @@ export function moneyMetrics(model: Model, errors: Map<string, number>, syncHeal
   lines.push("# TYPE money_detail_generated_timestamp_seconds gauge")
   gauge("money_detail_generated_timestamp_seconds", generated)
   lines.push("# TYPE money_detail_age_seconds gauge")
-  gauge("money_detail_age_seconds", generated ? Date.now() / 1000 - generated : 0)
+  gauge(
+    "money_detail_age_seconds",
+    generated ? Date.now() / 1000 - generated : 0
+  )
   lines.push("# TYPE money_detail_schema_version gauge")
   gauge("money_detail_schema_version", schema)
   lines.push("# TYPE money_app_db_up gauge")
   gauge("money_app_db_up", appUp)
   lines.push("# TYPE money_sources gauge")
-  for (const [status, count] of Object.entries(statuses)) gauge("money_sources", count, `status="${status}"`)
+  for (const [status, count] of Object.entries(statuses))
+    gauge("money_sources", count, `status="${status}"`)
   lines.push("# TYPE money_source_last_success_age_seconds_max gauge")
   gauge("money_source_last_success_age_seconds_max", oldestSuccess)
   const sync = syncHealth(syncHealthFile)
@@ -68,6 +90,7 @@ export function moneyMetrics(model: Model, errors: Map<string, number>, syncHeal
     gauge("money_sync_last_attempt_timestamp_seconds", sync.lastAttempt)
   }
   lines.push("# TYPE money_api_errors_total counter")
-  for (const [route, count] of errors) gauge("money_api_errors_total", count, `route=${JSON.stringify(route)}`)
+  for (const [route, count] of errors)
+    gauge("money_api_errors_total", count, `route=${JSON.stringify(route)}`)
   return lines.join("\n") + "\n"
 }

@@ -33,7 +33,10 @@ export const RuleAction = z
   })
   .strict()
   .refine(
-    (a) => Object.values(a).some((v) => v !== undefined && !(Array.isArray(v) && !v.length)),
+    (a) =>
+      Object.values(a).some(
+        (v) => v !== undefined && !(Array.isArray(v) && !v.length)
+      ),
     "Add at least one action"
   )
 export type RuleAction = z.infer<typeof RuleAction>
@@ -104,13 +107,17 @@ export function applyRules(
     if (a.hide !== undefined && out.hidden === undefined) out.hidden = a.hide
     if (a.mark_reviewed !== undefined && out.reviewed === undefined)
       out.reviewed = a.mark_reviewed
-    for (const tag of a.tags ?? []) if (!out.tags.includes(tag)) out.tags.push(tag)
+    for (const tag of a.tags ?? [])
+      if (!out.tags.includes(tag)) out.tags.push(tag)
   }
   return out
 }
 
 export function orderRules(rules: Rule[]) {
   return rules
-    .toSorted((a, b) => a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .toSorted(
+      (a, b) =>
+        a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    )
     .map((rule) => ({ rule, test: compileMatch(rule.match) }))
 }

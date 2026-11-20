@@ -1,62 +1,62 @@
 [
- {
-  "input": "Straße",
-  "expected": "strasse"
- },
- {
-  "input": "STRASSE",
-  "expected": "strasse"
- },
- {
-  "input": "ẞig",
-  "expected": "ssig"
- },
- {
-  "input": "ſtop",
-  "expected": "stop"
- },
- {
-  "input": "ΣΊΣΥΦΟΣ",
-  "expected": "σίσυφοσ"
- },
- {
-  "input": "ὀδυσσεύς",
-  "expected": "ὀδυσσεύσ"
- },
- {
-  "input": "İstanbul",
-  "expected": "i̇stanbul"
- },
- {
-  "input": "ﬁle Café",
-  "expected": "file café"
- },
- {
-  "input": "Ⅻ Club",
-  "expected": "xii club"
- },
- {
-  "input": "ＡＢＣ　Store",
-  "expected": "abc store"
- },
- {
-  "input": "a  b  c",
-  "expected": "a b c"
- },
- {
-  "input": "ᏣᎳᎩ ꮳꮃꭹ",
-  "expected": "ᏣᎳᎩ ᏣᎳᎩ"
- },
- {
-  "input": "Ǆungla",
-  "expected": "džungla"
- },
- {
-  "input": "Ⓜ️arket",
-  "expected": "m️arket"
- },
- {
-  "input": "  Corner   Grocery\t#12 ",
-  "expected": "corner grocery #12"
- }
+  {
+    "input": "Straße",
+    "expected": "strasse"
+  },
+  {
+    "input": "STRASSE",
+    "expected": "strasse"
+  },
+  {
+    "input": "ẞig",
+    "expected": "ssig"
+  },
+  {
+    "input": "ſtop",
+    "expected": "stop"
+  },
+  {
+    "input": "ΣΊΣΥΦΟΣ",
+    "expected": "σίσυφοσ"
+  },
+  {
+    "input": "ὀδυσσεύς",
+    "expected": "ὀδυσσεύσ"
+  },
+  {
+    "input": "İstanbul",
+    "expected": "i̇stanbul"
+  },
+  {
+    "input": "ﬁle Café",
+    "expected": "file café"
+  },
+  {
+    "input": "Ⅻ Club",
+    "expected": "xii club"
+  },
+  {
+    "input": "ＡＢＣ　Store",
+    "expected": "abc store"
+  },
+  {
+    "input": "a  b  c",
+    "expected": "a b c"
+  },
+  {
+    "input": "ᏣᎳᎩ ꮳꮃꭹ",
+    "expected": "ᏣᎳᎩ ᏣᎳᎩ"
+  },
+  {
+    "input": "Ǆungla",
+    "expected": "džungla"
+  },
+  {
+    "input": "Ⓜ️arket",
+    "expected": "m️arket"
+  },
+  {
+    "input": "  Corner   Grocery\t#12 ",
+    "expected": "corner grocery #12"
+  }
 ]

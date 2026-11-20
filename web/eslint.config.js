@@ -5,12 +5,7 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: [
-      "node_modules",
-      "dist",
-      "fixtures/out",
-      "src/routeTree.gen.ts",
-    ],
+    ignores: ["node_modules", "dist", "fixtures/out", "src/routeTree.gen.ts"],
   },
   {
     files: ["**/*.{ts,tsx}"],
@@ -20,5 +15,10 @@ export default tseslint.config(
       reactHooks.configs.flat.recommended,
     ],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+  {
+    // Tests read loosely typed JSON responses.
+    files: ["tests/**/*.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
   }
 )

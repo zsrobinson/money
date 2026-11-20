@@ -61,15 +61,15 @@ export function migrate(db: DatabaseSync) {
   try {
     db.exec(V1)
     const row = db.prepare("SELECT version FROM schema_version").get() as
-      | { version: number }
-      | undefined
+      { version: number } | undefined
     const current = row?.version ?? 0
     if (current > SCHEMA_VERSION)
       throw new Error(
         `App database schema ${current} is newer than this app (${SCHEMA_VERSION})`
       )
     if (current < 2) db.exec(V2)
-    if (!row) db.prepare("INSERT INTO schema_version VALUES(?)").run(SCHEMA_VERSION)
+    if (!row)
+      db.prepare("INSERT INTO schema_version VALUES(?)").run(SCHEMA_VERSION)
     else if (current < SCHEMA_VERSION)
       db.prepare("UPDATE schema_version SET version=?").run(SCHEMA_VERSION)
     db.exec("COMMIT")

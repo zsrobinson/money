@@ -1,0 +1,4 @@
+@import "@zsrobinson/shell/styles.css";
+
+/* Scan this app's own sources too. */
+@source "./";

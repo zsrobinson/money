@@ -22,7 +22,12 @@ export type CategoryInfo = {
   hidden: boolean
   sort: number
 }
-export type Split = { idx: number; amountCents: number; category: string; note: string | null }
+export type Split = {
+  idx: number
+  amountCents: number
+  category: string
+  note: string | null
+}
 export type EffTxn = Txn & {
   snapshot: { category: string; merchant: string | null }
   categoryEff: string
@@ -34,7 +39,12 @@ export type EffTxn = Txn & {
   tags: string[]
   splits: Split[] | null
   ruleIds: string[]
-  override: { category: boolean; merchant: boolean; hidden: boolean; reviewed: boolean }
+  override: {
+    category: boolean
+    merchant: boolean
+    hidden: boolean
+    reviewed: boolean
+  }
 }
 export type AccountView = Account & {
   name: string
@@ -46,7 +56,13 @@ export type AccountView = Account & {
   /** Signed: liabilities are negative. Null when unknown. */
   balanceCents: number | null
 }
-export type Allocation = { txn: EffTxn; category: string; owned: string; group: Group; amountCents: number }
+export type Allocation = {
+  txn: EffTxn
+  category: string
+  owned: string
+  group: Group
+  amountCents: number
+}
 
 export type Computed = {
   detail: Detail
@@ -67,7 +83,10 @@ export const isLiability = (a: Pick<Account, "type">) =>
 
 export function loadRules(db: AppDb): Rule[] {
   return (
-    db.prepare("SELECT * FROM rules ORDER BY position, id").all() as Record<string, unknown>[]
+    db.prepare("SELECT * FROM rules ORDER BY position, id").all() as Record<
+      string,
+      unknown
+    >[]
   ).flatMap((r) => {
     const match = RuleMatch.safeParse(JSON.parse(String(r.match_json)))
     const action = RuleAction.safeParse(JSON.parse(String(r.action_json)))
@@ -169,7 +188,11 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
       excludeNetWorth: Boolean(o?.exclude_net_worth),
       liability,
       balanceCents:
-        a.currentCents == null ? null : liability ? -a.currentCents : a.currentCents,
+        a.currentCents == null
+          ? null
+          : liability
+            ? -a.currentCents
+            : a.currentCents,
     }
   })
   const rules = loadRules(db)
@@ -189,18 +212,34 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
   const splits = new Map<string, Split[]>()
   for (const r of db
     .prepare("SELECT * FROM txn_splits ORDER BY txn_id, idx")
-    .all() as { txn_id: string; idx: number; amount_cents: number; category: string; note: string | null }[]) {
+    .all() as {
+    txn_id: string
+    idx: number
+    amount_cents: number
+    category: string
+    note: string | null
+  }[]) {
     let s = splits.get(r.txn_id)
     if (!s) splits.set(r.txn_id, (s = []))
-    s.push({ idx: r.idx, amountCents: r.amount_cents, category: r.category, note: r.note })
+    s.push({
+      idx: r.idx,
+      amountCents: r.amount_cents,
+      category: r.category,
+      note: r.note,
+    })
   }
   const txnTags = new Map<string, string[]>()
-  for (const r of db.prepare("SELECT * FROM txn_tags").all() as { txn_id: string; tag_id: string }[]) {
+  for (const r of db.prepare("SELECT * FROM txn_tags").all() as {
+    txn_id: string
+    tag_id: string
+  }[]) {
     let s = txnTags.get(r.txn_id)
     if (!s) txnTags.set(r.txn_id, (s = []))
     s.push(r.tag_id)
   }
-  const tags = db.prepare("SELECT id, name, hue FROM tags ORDER BY name").all() as Computed["tags"]
+  const tags = db
+    .prepare("SELECT id, name, hue FROM tags ORDER BY name")
+    .all() as Computed["tags"]
   const tagIds = new Set(tags.map((t) => t.id))
   const txns: EffTxn[] = detail.transactions.map((t) => {
     const r = applyRules(ordered, t, matchText(t))
@@ -208,7 +247,8 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
     const categoryEff = o?.category ?? r.category ?? t.category
     const merchantEff = o?.merchant ?? r.merchant ?? t.merchant
     const allTags = [...r.tags]
-    for (const tag of txnTags.get(t.id) ?? []) if (!allTags.includes(tag)) allTags.push(tag)
+    for (const tag of txnTags.get(t.id) ?? [])
+      if (!allTags.includes(tag)) allTags.push(tag)
     return {
       ...t,
       snapshot: { category: t.category, merchant: t.merchant },
@@ -216,7 +256,8 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
       merchantEff,
       merchantKey: normalizeText(merchantEff ?? t.description ?? ""),
       hidden: o?.hidden != null ? Boolean(o.hidden) : (r.hidden ?? false),
-      reviewed: o?.reviewed != null ? Boolean(o.reviewed) : (r.reviewed ?? false),
+      reviewed:
+        o?.reviewed != null ? Boolean(o.reviewed) : (r.reviewed ?? false),
       note: o?.note ?? null,
       tags: allTags.filter((id) => tagIds.has(id)),
       splits: splits.get(t.id) ?? null,
@@ -233,11 +274,20 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
   for (const t of txns) {
     if (t.hidden) continue
     const parts = t.splits?.length
-      ? t.splits.map((s) => ({ category: s.category, amountCents: s.amountCents }))
+      ? t.splits.map((s) => ({
+          category: s.category,
+          amountCents: s.amountCents,
+        }))
       : [{ category: t.categoryEff, amountCents: t.amountCents }]
     for (const p of parts) {
       const c = category(p.category)
-      allocations.push({ txn: t, category: c.code, owned: c.owned, group: c.group, amountCents: p.amountCents })
+      allocations.push({
+        txn: t,
+        category: c.code,
+        owned: c.owned,
+        group: c.group,
+        amountCents: p.amountCents,
+      })
     }
   }
   return {
@@ -256,14 +306,19 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
 }
 
 /** Recomputes when the snapshot reloads or the app database is written. */
-export function createModel(store: DetailStore, db: AppDb, today: () => string) {
+export function createModel(
+  store: DetailStore,
+  db: AppDb,
+  today: () => string
+) {
   let version = 0
   let cached: { key: string; value: Computed } | undefined
   return {
     get(): Computed {
       const detail = store.get()
       const key = `${detail.loadedAt}:${version}:${today()}`
-      if (cached?.key !== key) cached = { key, value: compute(detail, db, today()) }
+      if (cached?.key !== key)
+        cached = { key, value: compute(detail, db, today()) }
       return cached.value
     },
     /** Call after every committed app database write. */
