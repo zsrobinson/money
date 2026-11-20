@@ -112,3 +112,26 @@ def test_reconstruction_signs_pending_and_observation_anchors(tmp_path):
         assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-09')).fetchone()==(88800,0)
         assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-08')).fetchone()==(91800,1)
     finally:db.close()
+
+
+def test_disabled_sources_are_metadata_only(snapshot,tmp_path,monkeypatch):
+    db,_=snapshot
+    source=db.execute("SELECT ref FROM source_identity WHERE provider_ref='bank'").fetchone()[0]
+    monkeypatch.setenv('PLAIDMCP_DISABLED_SOURCES',source)
+    target=tmp_path/'detail.sqlite';publish(db,target)
+    with sqlite3.connect(target) as out:
+        assert out.execute('SELECT status FROM sources WHERE id=?',(source,)).fetchone()==('disabled',)
+        assert out.execute('SELECT COUNT(*) FROM accounts WHERE source_id=?',(source,)).fetchone()==(0,)
+        assert out.execute('SELECT COUNT(*) FROM transactions').fetchone()==(0,)
+
+
+def test_development_fixture_has_repeatable_full_history(tmp_path):
+    from fixture_data import generate
+    first=tmp_path/'first';second=tmp_path/'second';generate(first);generate(second)
+    with sqlite3.connect(first/'detail.sqlite') as a,sqlite3.connect(second/'detail.sqlite') as b:
+        assert list(a.iterdump())==list(b.iterdump())
+        assert a.execute('SELECT COUNT(DISTINCT substr(date,1,7)) FROM transactions').fetchone()[0]>=24
+        assert a.execute('SELECT COUNT(*) FROM accounts').fetchone()[0]>=5
+        assert a.execute('SELECT COUNT(*) FROM transactions WHERE pending=1').fetchone()[0]>0
+        assert a.execute('SELECT COUNT(*) FROM holding_history').fetchone()[0]>700
+        assert a.execute("SELECT COUNT(*) FROM sources WHERE kind='file_import'").fetchone()[0]==1

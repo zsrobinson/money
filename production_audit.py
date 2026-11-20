@@ -189,7 +189,8 @@ def main():
         PHASE='sync';sync.main()
         PHASE='full_history_audit';audit_client=Audited()
         with sqlite3.connect((private_root/'private.sqlite').as_uri()+'?mode=ro',uri=True) as private:
-            tokens=private.execute('SELECT token,product FROM credentials').fetchall()
+            from sources import enabled
+            tokens=[(token,product) for item,token,product in private.execute('SELECT item,token,product FROM credentials') if enabled(private,item)]
             for token,products in tokens:
                 if 'transactions' not in products.split(','):continue
                 cursor=None
@@ -201,7 +202,7 @@ def main():
                     cursor=page['next_cursor']
                 else:raise ValueError('Audit pagination limit')
             sources,healthy,accounts=audit_snapshot(candidate,private,captured,strict,approved)
-            failures=private.execute('SELECT COUNT(*) FROM items WHERE error IS NOT NULL OR as_of IS NULL').fetchone()[0]
+            failures=sum(1 for item,as_of,error in private.execute('SELECT id,as_of,error FROM items') if enabled(private,item) and (error is not None or as_of is None))
         if failures or healthy!=sources:raise ValueError('Source health gate failed; prior snapshot retained')
         PHASE='publication'
         if detail_candidate:os.replace(detail_candidate,detail_target)

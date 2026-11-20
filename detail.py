@@ -122,6 +122,12 @@ def publish(db, path):
                 aid,sid,label,institution,kind,subtype,currency,current,available,limit,mask,kinds,availability=a
                 names=db.execute('SELECT w.label,w.official_name,a.mask FROM accounts a JOIN account_alias m ON m.provider_ref=a.id AND m.item=a.item LEFT JOIN web_accounts w ON w.provider_id=a.id WHERE m.ref=? ORDER BY a.active DESC LIMIT 1',(aid,)).fetchone()
                 out.execute('INSERT OR REPLACE INTO accounts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(aid,sid,(names[0] if names else None) or label,names[1] if names else None,kind,subtype,names[2] if names else None,currency,cents(current),cents(available),cents(limit),availability,'separate' if aid in separate else 'own'))
+        # Disabled feeds remain visible as metadata in Settings, without
+        # republishing their accounts, transactions or holdings.
+        from sources import enabled,source_ref
+        for item,institution,as_of in db.execute('SELECT id,institution,as_of FROM items'):
+            if not enabled(db,item):
+                out.execute('INSERT INTO sources VALUES(?,?,?,?,?,?)',(source_ref(db,item),'file_import' if item=='venmo-csv' else 'connection',institution,'disabled',as_of,'[]'))
         for r in db.execute('''SELECT t.id,t.item,m.ref,t.date,t.amount,t.currency,t.merchant,t.primary_category,t.detailed_category,t.flow_kind,t.pending,w.description,w.merchant,w.authorized_date,w.logo_url,w.website,w.pfc_primary,w.pfc_detailed,w.pfc_confidence,w.payment_channel,x.paired_item,x.paired_ref
         FROM transactions t JOIN account_alias m ON m.provider_ref=t.account AND m.item=t.item LEFT JOIN web_transactions w ON w.provider_id=t.id AND w.item=t.item LEFT JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id'''):
             tid,item,aid,day,amount,currency,merchant,primary,detail,flow,pending,description,raw_merchant,authorized,logo,website,pfc,pfcd,confidence,channel,paired_item,paired_ref=r
@@ -131,7 +137,7 @@ def publish(db, path):
             out.execute('INSERT INTO transactions VALUES('+','.join('?'*19)+')',(opaque('txn',item,tid),aid,day,-cents(amount),currency,raw_merchant or merchant,description,cat,'internal_transfer' if pair else detailed(primary,detail),flow,pending,pair,authorized,logo,website,pfc,pfcd,confidence,channel))
         # Sanitized CSV rows have no provider IDs or text. Stable ordinal preserves
         # duplicate genuine rows without exposing filenames or import metadata.
-        wallet=out.execute("SELECT id FROM accounts WHERE subtype='wallet' LIMIT 1").fetchone()
+        wallet=out.execute("SELECT a.id FROM accounts a JOIN sources s ON s.id=a.source_id WHERE a.subtype='wallet' AND s.id=?",(source_ref(db,'venmo-csv'),)).fetchone() if db.execute("SELECT 1 FROM items WHERE id='venmo-csv'").fetchone() else None
         if wallet:
             from collections import Counter
             ordinals=Counter()
@@ -152,7 +158,7 @@ def publish(db, path):
         for item,merchant,currency,frequency,month,active in db.execute('SELECT item,merchant,currency,frequency,last_charged_month,active FROM recurring_merchants'):
             from sources import source_ref
             sid=source_ref(db,item)
-            if out.execute('SELECT 1 FROM sources WHERE id=?',(sid,)).fetchone():out.execute('INSERT INTO recurring_hints VALUES(?,?,?,?,?,?)',(sid,merchant,currency,frequency,month,active))
+            if out.execute('SELECT 1 FROM sources WHERE id=? AND status!=\'disabled\'',(sid,)).fetchone():out.execute('INSERT INTO recurring_hints VALUES(?,?,?,?,?,?)',(sid,merchant,currency,frequency,month,active))
         for i,(code,values) in enumerate(CATEGORIES.items()):
             group='income' if code=='income' else 'transfer' if code in ('bank_transfer','internal_transfer','peer_payment') else 'expense'
             out.execute('INSERT INTO categories VALUES(?,?,?,?,?)',(code,values[0],group,None,i))

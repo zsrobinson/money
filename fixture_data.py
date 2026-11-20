@@ -18,16 +18,17 @@ def generate(root):
     root.mkdir(parents=True,mode=0o700)
     db=connect(root/'fixture-private.sqlite')
     try:
-        for key,name in [('bank','Juniper Demonstration Bank'),('broker','Orbit Example Brokerage'),('wallet','Sample Payment Wallet')]:
+        for key,name in [('bank','Juniper Demonstration Bank'),('broker','Orbit Example Brokerage'),('venmo-csv','Sample Payment Wallet')]:
             db.execute('INSERT INTO items VALUES(?,?,?,NULL)',(key,name,'2026-11-20T12:00:00+00:00'))
             db.execute('INSERT INTO source_identity VALUES(?,?)',(key,opaque('src',key)))
-        accounts=[('checking','bank','Everyday checking','depository','checking',7800),('savings','bank','Rainy day savings','depository','savings',18400),('card','bank','Everyday card','credit','credit card',1230),('brokerage','broker','Long term investing','investment','brokerage',32700),('wallet','wallet','Payment wallet','other','wallet',240)]
+        accounts=[('checking','bank','Everyday checking','depository','checking',7800),('savings','bank','Rainy day savings','depository','savings',18400),('card','bank','Everyday card','credit','credit card',1230),('brokerage','broker','Long term investing','investment','brokerage',32700),('wallet','venmo-csv','Payment wallet','other','wallet',240)]
         for i,(key,item,name,kind,subtype,current) in enumerate(accounts):
             institution=db.execute('SELECT institution FROM items WHERE id=?',(item,)).fetchone()[0].casefold()
             ref=opaque('acct',key)
             db.execute('INSERT INTO account_identity VALUES(?,?,?,?,?)',(ref,institution,kind,subtype,fingerprint(name)))
             db.execute('INSERT INTO account_alias VALUES(?,?,?)',(key,item,ref))
             ingest_accounts(db,item,[{'account_id':key,'name':name,'official_name':'Example '+name,'type':kind,'subtype':subtype,'mask':str(4100+i),'balances':{'current':current,'available':current,'limit':8000 if kind=='credit' else None,'iso_currency_code':'USD'}}])
+        db.execute('INSERT INTO account_alias VALUES(?,?,?)',('virtual:venmo-csv','venmo-csv',opaque('acct','wallet')))
         start=date(2024,10,1);end=date(2026,11,20)
         tx=[];day=start
         while day<=end:
@@ -63,6 +64,9 @@ def generate(root):
         for i,day in enumerate(['2026-10-11','2026-11-04','2026-11-15']):
             db.execute('INSERT INTO venmo_rows VALUES(?,?,?,?)',(day,1800+i*500,'out' if i%2 else 'in','peer_sent' if i%2 else 'peer_received'))
         db.commit();publish(db,root/'detail.sqlite')
+        import sqlite3
+        with sqlite3.connect(root/'detail.sqlite') as out:
+            out.execute("UPDATE meta SET value='2026-11-20T12:00:00+00:00' WHERE key='generated_at'")
     finally:db.close()
 
 
