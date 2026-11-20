@@ -12,10 +12,10 @@ import {
 import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Button } from "@zsrobinson/shell/ui/button"
-import { ArrowRightIcon } from "lucide-react"
 import { z } from "zod"
 import {
   Amount,
+  CardLink,
   Change,
   EmptyState,
   Loading,
@@ -27,19 +27,21 @@ import {
   StatRow,
 } from "@/components/money"
 import { TxnRows } from "@/components/transactions"
+import { usePageTitle } from "@/lib/crumb"
 import {
   accountKind,
   CADENCE,
   epoch,
   epochFullDate,
   money,
+  moneyTick,
   monthName,
   percent,
   relativeDay,
+  timeTick,
 } from "@/lib/format"
-import { usePageTitle } from "@/lib/crumb"
 import { investmentsQuery, metaQuery, summaryQuery } from "@/lib/queries"
-import type { Range } from "@/lib/types"
+import type { Account, Range } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
   validateSearch: z.object({
@@ -58,10 +60,18 @@ function Dashboard() {
   const navigate = useNavigate({ from: "/" })
   const meta = useQuery(metaQuery)
   const summary = useQuery(summaryQuery(range))
+  const investments = useQuery(investmentsQuery("3m"))
   const setRange = (r: Range) =>
     void navigate({ search: { range: r }, replace: true })
   const s = summary.data
-  const investments = useQuery(investmentsQuery("3m"))
+  const netPoints = (s?.netWorth.series ?? []).map((p) => ({
+    time: epoch(p.date),
+    net: p.net / 100,
+  }))
+  const invPoints = (investments.data?.series ?? []).map((p) => ({
+    time: epoch(p.date),
+    value: p.cents / 100,
+  }))
   return (
     <Page>
       <PageHeader>
@@ -92,7 +102,7 @@ function Dashboard() {
         <Loading rows={8} />
       ) : (
         <>
-          <PageGrid layout="wide">
+          <PageGrid layout="wide" className="items-stretch">
             <SectionCard
               title="Net worth"
               action={<RangeSelect value={s.range} onChange={setRange} />}
@@ -123,30 +133,20 @@ function Dashboard() {
               <TrendChart
                 label="Net worth over time"
                 baseline="data"
-                data={s.netWorth.series.map((p) => ({
-                  time: epoch(p.date),
-                  net: p.net / 100,
-                }))}
+                data={netPoints}
                 config={{
                   net: { label: "Net worth", color: "var(--chart-1)" },
                 }}
                 format={whole}
+                formatTick={moneyTick}
                 formatTime={epochFullDate}
+                formatTimeTick={timeTick(netPoints)}
                 className="h-52"
               />
             </SectionCard>
             <SectionCard
               title={monthName(s.month.month)}
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  render={<Link to="/cash-flow" />}
-                  nativeButton={false}
-                >
-                  Cash flow
-                </Button>
-              }
+              action={<CardLink to="/cash-flow">Cash flow</CardLink>}
             >
               <StatRow className="mb-4">
                 <Stat
@@ -163,6 +163,7 @@ function Dashboard() {
                 </Stat>
               </StatRow>
               <TrendChart
+                curve="linear"
                 label="Spending this month against last month, by day"
                 data={s.month.pace.map((p) => ({
                   time: p.day,
@@ -176,30 +177,25 @@ function Dashboard() {
                     color: "var(--chart-neutral)",
                   },
                 }}
+                dashed={["lastMonth"]}
                 format={whole}
+                formatTick={moneyTick}
                 formatTime={(d) => `Day ${d}`}
+                formatTimeTick={(d) => String(d)}
                 className="h-52"
               />
             </SectionCard>
           </PageGrid>
-          <PageGrid layout="two">
+          <PageGrid className="items-stretch lg:grid-cols-3">
             <SectionCard
               title="Budget"
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  render={<Link to="/budgets" />}
-                  nativeButton={false}
-                >
-                  All budgets
-                </Button>
-              }
+              className="h-full"
+              action={<CardLink to="/budgets">Budgets</CardLink>}
             >
               {s.budget.rows.length ? (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-muted-foreground">
+                    <span className="text-muted-foreground tabular-nums">
                       {money(s.budget.spentCents, { whole: true })} of{" "}
                       {money(s.budget.budgetedCents, { whole: true })}
                     </span>
@@ -254,7 +250,7 @@ function Dashboard() {
                 />
               )}
             </SectionCard>
-            <SectionCard title="Spending by category">
+            <SectionCard title="Spending by category" className="h-full">
               <DonutChart
                 label={`Spending by category in ${monthName(s.month.month)}`}
                 totalLabel="spent"
@@ -272,6 +268,48 @@ function Dashboard() {
                 }
               />
             </SectionCard>
+            <SectionCard
+              title="Upcoming"
+              flush
+              className="h-full"
+              action={<CardLink to="/recurring">Recurring</CardLink>}
+            >
+              {s.upcoming.length ? (
+                <ul className="flex flex-col divide-y divide-border/70">
+                  {s.upcoming.map((r) => (
+                    <li key={r.key}>
+                      <Link
+                        to="/reports/merchants/$key"
+                        params={{ key: r.key }}
+                        className="flex min-h-12 items-center gap-3 px-5 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted"
+                      >
+                        <MerchantMark name={r.merchant} />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-sm font-medium">
+                            {r.merchant}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {relativeDay(
+                              r.nextDate,
+                              meta.data?.today ?? r.nextDate
+                            )}{" "}
+                            · {CADENCE[r.cadence] ?? r.cadence}
+                          </span>
+                        </span>
+                        <Amount
+                          cents={r.amountCents}
+                          className="text-sm whitespace-nowrap"
+                        />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-5 pb-5 text-sm text-muted-foreground">
+                  Nothing due in the next month.
+                </p>
+              )}
+            </SectionCard>
           </PageGrid>
           <PageGrid layout="wide">
             <PageStack>
@@ -279,15 +317,7 @@ function Dashboard() {
                 title="Recent transactions"
                 flush
                 action={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    render={<Link to="/transactions" />}
-                    nativeButton={false}
-                  >
-                    View all
-                    <ArrowRightIcon data-icon="inline-end" />
-                  </Button>
+                  <CardLink to="/transactions">All transactions</CardLink>
                 }
               >
                 <TxnRows items={s.recent} showAccount={false} />
@@ -295,16 +325,7 @@ function Dashboard() {
               {investments.data?.holdings.length ? (
                 <SectionCard
                   title="Investments"
-                  action={
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      render={<Link to="/investments" />}
-                      nativeButton={false}
-                    >
-                      Holdings
-                    </Button>
-                  }
+                  action={<CardLink to="/investments">Holdings</CardLink>}
                 >
                   <StatRow className="mb-3">
                     <Stat label="Value">
@@ -321,8 +342,8 @@ function Dashboard() {
                         whole
                       />
                     </Stat>
-                    {investments.data.series.length > 1 ? (
-                      <Stat label="Last 3 months">
+                    {invPoints.length > 1 ? (
+                      <Stat label="3 months">
                         <Amount
                           cents={
                             investments.data.series.at(-1)!.cents -
@@ -337,15 +358,14 @@ function Dashboard() {
                   <TrendChart
                     label="Investment value, last 3 months"
                     baseline="data"
-                    data={investments.data.series.map((p) => ({
-                      time: epoch(p.date),
-                      value: p.cents / 100,
-                    }))}
+                    data={invPoints}
                     config={{
                       value: { label: "Value", color: "var(--chart-1)" },
                     }}
                     format={whole}
+                    formatTick={moneyTick}
                     formatTime={epochFullDate}
+                    formatTimeTick={timeTick(invPoints)}
                     className="h-36"
                   />
                 </SectionCard>
@@ -353,65 +373,9 @@ function Dashboard() {
             </PageStack>
             <PageStack>
               <SectionCard
-                title="Upcoming"
-                flush
-                action={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    render={<Link to="/recurring" />}
-                    nativeButton={false}
-                  >
-                    Recurring
-                  </Button>
-                }
-              >
-                {s.upcoming.length ? (
-                  <ul className="flex flex-col divide-y divide-border/70">
-                    {s.upcoming.map((r) => (
-                      <li key={r.key}>
-                        <Link
-                          to="/reports/merchants/$key"
-                          params={{ key: r.key }}
-                          className="flex min-h-12 items-center gap-3 px-5 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted"
-                        >
-                          <MerchantMark name={r.merchant} />
-                          <span className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate text-sm font-medium">
-                              {r.merchant}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {relativeDay(
-                                r.nextDate,
-                                meta.data?.today ?? r.nextDate
-                              )}{" "}
-                              · {CADENCE[r.cadence] ?? r.cadence}
-                            </span>
-                          </span>
-                          <Amount cents={r.amountCents} className="text-sm" />
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="px-5 pb-5 text-sm text-muted-foreground">
-                    Nothing due in the next month.
-                  </p>
-                )}
-              </SectionCard>
-              <SectionCard
                 title="Accounts"
                 flush
-                action={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    render={<Link to="/accounts" />}
-                    nativeButton={false}
-                  >
-                    All accounts
-                  </Button>
-                }
+                action={<CardLink to="/accounts">Accounts</CardLink>}
               >
                 <AccountGroups accounts={s.accounts} />
               </SectionCard>
@@ -440,18 +404,7 @@ function paceText(spent: number, lastSameDay: number) {
   return `${percent(share)} ${diff > 0 ? "more" : "less"} than last month by now`
 }
 
-function AccountGroups({
-  accounts,
-}: {
-  accounts: {
-    id: string
-    name: string
-    type: string
-    subtype: string | null
-    balanceCents: number | null
-    institution: string
-  }[]
-}) {
+function AccountGroups({ accounts }: { accounts: Account[] }) {
   const kinds = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
   return (
     <div className="flex flex-col">
@@ -464,7 +417,7 @@ function AccountGroups({
             key={kind}
             className="border-t border-border/70 first:border-t-0"
           >
-            <div className="flex items-center justify-between px-5 pt-3 pb-1 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between px-5 pt-2.5 pb-0.5 text-xs text-muted-foreground">
               <span>{kind}</span>
               <span className="tabular-nums">
                 {money(total, { whole: true })}
@@ -517,11 +470,12 @@ function Freshness({
       {stale ? (
         <Link
           to="/settings"
+          hash="connections"
           className="text-negative underline-offset-4 hover:underline"
         >
           {stale === 1
-            ? "1 source needs attention"
-            : `${stale} sources need attention`}
+            ? "1 connection needs attention"
+            : `${stale} connections need attention`}
         </Link>
       ) : null}
     </PageMeta>

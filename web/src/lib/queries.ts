@@ -92,6 +92,7 @@ export const cashflowQuery = (months: number, month?: string) =>
   q<{
     months: MonthFlow[]
     selected: string
+    incomeSources: { key: string; name: string; cents: number; count: number }[]
     income: {
       code: string
       label: string
@@ -150,7 +151,7 @@ export const categoryDetailQuery = (code: string) =>
     averageCents: number
     totalCents: number
     merchants: { key: string; name: string; cents: number; count: number }[]
-    children: { code: string; label: string }[]
+    children: { code: string; label: string; cents: number }[]
   }>(
     ["money", "reports", "category", code],
     `/api/reports/categories/${encodeURIComponent(code)}`

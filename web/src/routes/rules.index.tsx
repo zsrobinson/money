@@ -1,19 +1,24 @@
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import {
-  Page,
-  PageActions,
-  PageHeader,
-  PageMeta,
-  PageTitle,
-} from "@zsrobinson/shell"
+import { Page, PageActions, PageHeader, PageTitle } from "@zsrobinson/shell"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { Card } from "@zsrobinson/shell/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zsrobinson/shell/ui/dropdown-menu"
 import { Switch } from "@zsrobinson/shell/ui/switch"
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "lucide-react"
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  EllipsisIcon,
+  PlusIcon,
+} from "lucide-react"
 import { EmptyState, Loading } from "@/components/money"
-import { describeRule } from "@/components/rules"
+import { describeRule, RulesHelp } from "@/components/rules"
 import { useCategoryLabels } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import { pluralize } from "@/lib/format"
@@ -40,18 +45,23 @@ function Rules() {
       success: (_, v) => (v.enabled ? "Rule turned on" : "Rule turned off"),
     }
   )
-  const order = useSend<{ ids: string[] }>("POST", "/api/rules/order")
+  const order = useSend<{ ids: string[] }>("POST", "/api/rules/order", {
+    success: "Order saved",
+  })
+  const list = rules.data ?? []
   const move = (index: number, by: number) => {
-    const ids = (rules.data ?? []).map((r) => r.id)
+    const ids = list.map((r) => r.id)
     const [id] = ids.splice(index, 1)
     ids.splice(index + by, 0, id)
     order.mutate({ ids })
   }
-  const list = rules.data ?? []
   return (
     <Page>
       <PageHeader>
-        <PageTitle>Rules</PageTitle>
+        <div className="flex items-center gap-1.5">
+          <PageTitle>Rules</PageTitle>
+          <RulesHelp />
+        </div>
         <PageActions>
           <Button
             size="sm"
@@ -63,17 +73,6 @@ function Rules() {
           </Button>
         </PageActions>
       </PageHeader>
-      {list.length ? (
-        <PageMeta>
-          <span>
-            {pluralize(list.filter((r) => r.enabled).length, "rule")} on
-          </span>
-          <span>
-            Applied in this order. For each field the first match wins; your
-            edits always win.
-          </span>
-        </PageMeta>
-      ) : null}
       {rules.isError ? (
         <QueryError
           title="Rules failed to load"
@@ -100,7 +99,7 @@ function Rules() {
                   className="flex min-h-10 min-w-0 flex-1 flex-col justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span
-                    className={`text-sm ${r.enabled ? "" : "text-muted-foreground"}`}
+                    className={`line-clamp-2 text-sm ${r.enabled ? "" : "text-muted-foreground"}`}
                   >
                     {describeRule(r, label, accountName)}
                   </span>
@@ -114,6 +113,7 @@ function Rules() {
                   <Button
                     size="icon-sm"
                     variant="ghost"
+                    className="max-sm:hidden"
                     aria-label="Move up"
                     disabled={i === 0 || order.isPending}
                     onClick={() => move(i, -1)}
@@ -123,12 +123,43 @@ function Rules() {
                   <Button
                     size="icon-sm"
                     variant="ghost"
+                    className="max-sm:hidden"
                     aria-label="Move down"
                     disabled={i === list.length - 1 || order.isPending}
                     onClick={() => move(i, 1)}
                   >
                     <ArrowDownIcon />
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="sm:hidden"
+                          aria-label="Reorder rule"
+                        />
+                      }
+                    >
+                      <EllipsisIcon />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        disabled={i === 0}
+                        onClick={() => move(i, -1)}
+                      >
+                        <ArrowUpIcon />
+                        Move up
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={i === list.length - 1}
+                        onClick={() => move(i, 1)}
+                      >
+                        <ArrowDownIcon />
+                        Move down
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Switch
                     className="ml-2"
                     aria-label={r.enabled ? "Turn rule off" : "Turn rule on"}

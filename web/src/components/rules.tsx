@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { FormStack, PageGrid, PageStack } from "@zsrobinson/shell"
+import { FormStack, PageGrid } from "@zsrobinson/shell"
 import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {
@@ -9,17 +9,20 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSet,
   FieldLegend,
+  FieldSet,
 } from "@zsrobinson/shell/ui/field"
 import { Input } from "@zsrobinson/shell/ui/input"
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@zsrobinson/shell/ui/native-select"
 import { Switch } from "@zsrobinson/shell/ui/switch"
 import { Toggle } from "@zsrobinson/shell/ui/toggle"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@zsrobinson/shell/ui/tooltip"
+import { InfoIcon } from "lucide-react"
 import { EmptyState, Loading, SectionCard } from "@/components/money"
+import { Choice } from "@/components/pickers"
 import {
   CategorySelect,
   TxnRows,
@@ -30,6 +33,31 @@ import { money, pluralize } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { accountsQuery, categoriesQuery, tagsQuery } from "@/lib/queries"
 import type { Rule, RuleAction, RuleMatch, Txn } from "@/lib/types"
+
+/** How rules combine, behind an info icon beside the page title. */
+export function RulesHelp() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="How rules apply"
+            className="text-muted-foreground"
+          />
+        }
+      >
+        <InfoIcon />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">
+        Rules apply in order to past and future transactions. For each field the
+        first matching rule wins, and your own edits to a transaction always
+        win.
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function describeRule(
   r: Pick<Rule, "match" | "action">,
@@ -145,7 +173,7 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
   const preview = useMutation({
     mutationFn: (b: {
       match: RuleMatch
-      action: RuleAction
+      action?: RuleAction
       ruleId?: string
     }) =>
       send<{ total: number; changes: number; items: Txn[] }>(
@@ -160,10 +188,10 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
     const id = setTimeout(
       () =>
         preview.mutate({
-          ...body,
+          match: body.match,
           action: hasAction ? body.action : undefined,
           ruleId: rule?.id,
-        } as never),
+        }),
       300
     )
     return () => clearTimeout(id)
@@ -188,28 +216,26 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
     else create.mutate(payload)
   }
   return (
+    // Form, then matches, then buttons: on a phone the preview comes before saving.
     <PageGrid layout="wide">
       <FormStack>
         <SectionCard title="When a transaction matches">
-          <FieldGroup>
+          <FieldGroup className="@container">
             <Field>
               <FieldLabel htmlFor="rule-merchant">Merchant</FieldLabel>
               <div className="flex gap-2">
-                <NativeSelect
+                <Choice
                   aria-label="Merchant match"
                   className="w-32 shrink-0"
                   value={f.merchantMode}
-                  onChange={(e) =>
-                    set("merchantMode", e.target.value as Form["merchantMode"])
+                  onChange={(v) =>
+                    set("merchantMode", v as Form["merchantMode"])
                   }
-                >
-                  <NativeSelectOption value="contains">
-                    Contains
-                  </NativeSelectOption>
-                  <NativeSelectOption value="equals">
-                    Is exactly
-                  </NativeSelectOption>
-                </NativeSelect>
+                  options={[
+                    { value: "contains", label: "Contains" },
+                    { value: "equals", label: "Is exactly" },
+                  ]}
+                />
                 <Input
                   id="rule-merchant"
                   placeholder="Any merchant"
@@ -218,26 +244,24 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
                 />
               </div>
               <FieldDescription>
-                Matching ignores case, accents and extra spaces, and uses the
-                bank’s merchant name.
+                Ignores case, accents and extra spaces, and uses the bank’s
+                merchant name.
               </FieldDescription>
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 @lg:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="rule-account">Account</FieldLabel>
-                <NativeSelect
+                <Choice
                   id="rule-account"
                   className="w-full"
                   value={f.account}
-                  onChange={(e) => set("account", e.target.value)}
-                >
-                  <NativeSelectOption value="">Any account</NativeSelectOption>
-                  {(accounts.data ?? []).map((a) => (
-                    <NativeSelectOption key={a.id} value={a.id}>
-                      {a.name}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  placeholder="Any account"
+                  onChange={(v) => set("account", v)}
+                  options={(accounts.data ?? []).map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                  }))}
+                />
               </Field>
               <Field>
                 <FieldLabel htmlFor="rule-category">Bank category</FieldLabel>
@@ -251,20 +275,17 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
               </Field>
               <Field>
                 <FieldLabel htmlFor="rule-direction">Direction</FieldLabel>
-                <NativeSelect
+                <Choice
                   id="rule-direction"
                   className="w-full"
                   value={f.direction}
-                  onChange={(e) =>
-                    set("direction", e.target.value as Form["direction"])
-                  }
-                >
-                  <NativeSelectOption value="">
-                    Money in or out
-                  </NativeSelectOption>
-                  <NativeSelectOption value="out">Money out</NativeSelectOption>
-                  <NativeSelectOption value="in">Money in</NativeSelectOption>
-                </NativeSelect>
+                  placeholder="Money in or out"
+                  onChange={(v) => set("direction", v as Form["direction"])}
+                  options={[
+                    { value: "out", label: "Money out" },
+                    { value: "in", label: "Money in" },
+                  ]}
+                />
               </Field>
               <Field>
                 <FieldLabel htmlFor="rule-min">Amount</FieldLabel>
@@ -290,8 +311,8 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
           </FieldGroup>
         </SectionCard>
         <SectionCard title="Then">
-          <FieldGroup>
-            <div className="grid gap-4 sm:grid-cols-2">
+          <FieldGroup className="@container">
+            <div className="grid gap-4 @lg:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="rule-set-category">
                   Set category
@@ -365,69 +386,65 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
             </Field>
           </FieldGroup>
         </SectionCard>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {rule ? (
-            <ConfirmAction
-              trigger={
-                <Button variant="ghost" className="mr-auto text-destructive">
-                  Delete rule
-                </Button>
-              }
-              title="Delete this rule?"
-              confirmLabel="Delete rule"
-              destructive
-              onConfirm={() => remove.mutateAsync()}
-            >
-              Transactions it changed go back to their bank values unless you
-              edited them yourself.
-            </ConfirmAction>
-          ) : null}
-          <Button
-            variant="outline"
-            onClick={() => void navigate({ to: "/rules" })}
-          >
-            Cancel
-          </Button>
-          <Button disabled={!hasMatch || !hasAction || saving} onClick={submit}>
-            {rule ? "Save rule" : "Create rule"}
-          </Button>
-        </div>
       </FormStack>
-      <PageStack className="lg:sticky lg:top-16">
-        <SectionCard title="Matches" flush>
-          {!hasMatch ? (
-            <p className="px-5 pb-5 text-sm text-muted-foreground">
-              Add a condition to see which transactions this rule changes.
-            </p>
-          ) : !preview.data ? (
-            <Loading rows={4} className="px-5 pb-5" />
-          ) : preview.data.total ? (
-            <>
-              <p className="px-5 pb-2 text-sm text-muted-foreground">
-                {pluralize(preview.data.total, "transaction")} match
-                {body.action.category
-                  ? `, ${preview.data.changes} would move to ${label(body.action.category)}`
-                  : ""}
-                .
-              </p>
-              <TxnRows
-                items={preview.data.items.slice(0, 8)}
-                showAccount={false}
-              />
-            </>
-          ) : (
-            <EmptyState title="Nothing matches yet">
-              The rule still applies to future transactions.
-            </EmptyState>
-          )}
-        </SectionCard>
-        {rule ? (
-          <p className="px-1 text-xs text-muted-foreground">
-            Rules run in order. For each field, the first matching rule wins,
-            and your own edits to a transaction always win.
+      <SectionCard
+        title="Matches"
+        flush
+        className="lg:sticky lg:top-16 lg:row-span-2"
+      >
+        {!hasMatch ? (
+          <p className="px-5 pb-5 text-sm text-muted-foreground">
+            Add a condition to see which transactions this rule changes.
           </p>
+        ) : !preview.data ? (
+          <Loading rows={4} className="px-5 pb-5" />
+        ) : preview.data.total ? (
+          <>
+            <p className="px-5 pb-2 text-sm text-muted-foreground">
+              {pluralize(preview.data.total, "transaction")} match
+              {body.action.category
+                ? `; ${preview.data.changes} would move to ${label(body.action.category)}`
+                : ""}
+              .
+            </p>
+            <TxnRows
+              items={preview.data.items.slice(0, 8)}
+              showAccount={false}
+            />
+          </>
+        ) : (
+          <EmptyState title="Nothing matches yet">
+            The rule still applies to future transactions.
+          </EmptyState>
+        )}
+      </SectionCard>
+      <div className="flex w-full max-w-3xl flex-wrap items-center justify-end gap-2">
+        {rule ? (
+          <ConfirmAction
+            trigger={
+              <Button variant="ghost" className="mr-auto text-destructive">
+                Delete rule
+              </Button>
+            }
+            title="Delete this rule?"
+            confirmLabel="Delete rule"
+            destructive
+            onConfirm={() => remove.mutateAsync()}
+          >
+            Transactions it changed go back to their bank values unless you
+            edited them yourself.
+          </ConfirmAction>
         ) : null}
-      </PageStack>
+        <Button
+          variant="outline"
+          onClick={() => void navigate({ to: "/rules" })}
+        >
+          Cancel
+        </Button>
+        <Button disabled={!hasMatch || !hasAction || saving} onClick={submit}>
+          {rule ? "Save rule" : "Create rule"}
+        </Button>
+      </div>
     </PageGrid>
   )
 }

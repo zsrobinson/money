@@ -5,10 +5,6 @@ import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Card } from "@zsrobinson/shell/ui/card"
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@zsrobinson/shell/ui/native-select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -17,20 +13,24 @@ import {
   TableRow,
 } from "@zsrobinson/shell/ui/table"
 import { z } from "zod"
-import { Amount, Loading, SectionCard } from "@/components/money"
-import { ReportNav } from "@/components/report-nav"
+import { Amount, Loading, RangeSelect, SectionCard } from "@/components/money"
+import { rangeMonths, ReportNav } from "@/components/report-nav"
 import { usePageTitle } from "@/lib/crumb"
 import {
   epochMonthYear,
   money,
+  moneyTick,
   monthEpoch,
   monthShortYear,
   percent,
 } from "@/lib/format"
-import { trendsQuery } from "@/lib/queries"
+import { metaQuery, trendsQuery } from "@/lib/queries"
+import type { Range } from "@/lib/types"
 
 export const Route = createFileRoute("/reports/trends")({
-  validateSearch: z.object({ months: z.number().int().optional() }),
+  validateSearch: z.object({
+    range: z.enum(["1m", "3m", "6m", "ytd", "1y", "all"]).optional(),
+  }),
   staticData: {
     crumbs: [
       { label: "Reports", to: "/reports" },
@@ -44,34 +44,33 @@ const whole = (d: number) => money(Math.round(d * 100), { whole: true })
 
 function Trends() {
   usePageTitle("Trends")
-  const { months = 12 } = Route.useSearch()
+  const { range = "6m" } = Route.useSearch()
   const navigate = useNavigate({ from: "/reports/trends" })
-  const q = useQuery(trendsQuery(months))
+  const today = useQuery(metaQuery).data?.today ?? ""
+  const q = useQuery({
+    ...trendsQuery(rangeMonths(range, today)),
+    enabled: Boolean(today),
+  })
   const d = q.data
   const n = (row: Record<string, number | string>, key: string) =>
     Number(row[key] ?? 0)
+  const current = today.slice(0, 7)
+  // The current month is still filling up; charts show full months only.
+  const full = (d?.rows ?? []).filter((r) => r.month !== current)
   return (
     <Page>
       <PageHeader>
         <PageTitle>Reports</PageTitle>
         <PageActions>
-          <NativeSelect
-            aria-label="Months shown"
-            value={String(months)}
-            onChange={(e) =>
-              void navigate({
-                search: { months: Number(e.target.value) },
-                replace: true,
-              })
+          <RangeSelect
+            value={range}
+            onChange={(r: Range) =>
+              void navigate({ search: { range: r }, replace: true })
             }
-          >
-            <NativeSelectOption value="6">Last 6 months</NativeSelectOption>
-            <NativeSelectOption value="12">Last 12 months</NativeSelectOption>
-            <NativeSelectOption value="24">Last 24 months</NativeSelectOption>
-          </NativeSelect>
+          />
         </PageActions>
       </PageHeader>
-      <ReportNav />
+      <ReportNav range={range} />
       {q.isError ? (
         <QueryError
           title="Trends failed to load"
@@ -87,8 +86,8 @@ function Trends() {
             <TrendChart
               kind="bar"
               stacked
-              label="Monthly spending stacked by the four largest categories"
-              data={d.rows.map((r) => ({
+              label="Monthly spending stacked by the four largest categories, full months"
+              data={full.map((r) => ({
                 time: monthEpoch(String(r.month)),
                 ...Object.fromEntries([
                   ...d.categories.map((c) => [c.code, n(r, c.code) / 100]),
@@ -108,14 +107,16 @@ function Trends() {
                 },
               }}
               format={whole}
+              formatTick={moneyTick}
               formatTime={epochMonthYear}
               className="h-72"
             />
           </SectionCard>
           <SectionCard title="Income against spending">
             <TrendChart
-              label="Monthly income and spending"
-              data={d.rows.map((r) => ({
+              curve="linear"
+              label="Monthly income and spending, full months"
+              data={full.map((r) => ({
                 time: monthEpoch(String(r.month)),
                 income: n(r, "incomeCents") / 100,
                 spending: n(r, "spendingCents") / 100,
@@ -125,9 +126,13 @@ function Trends() {
                 spending: { label: "Spending", color: "var(--chart-negative)" },
               }}
               format={whole}
+              formatTick={moneyTick}
               formatTime={epochMonthYear}
               className="h-56"
             />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Charts show full months; the table includes this month so far.
+            </p>
           </SectionCard>
           <Card className="gap-0 overflow-x-auto py-0">
             <Table>
@@ -142,16 +147,24 @@ function Trends() {
                       {c.label}
                     </TableHead>
                   ))}
+                  <TableHead className="text-right">Income</TableHead>
                   <TableHead className="text-right">Spending</TableHead>
-                  <TableHead className="text-right">Saved</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">
+                    Saved
+                  </TableHead>
                   <TableHead className="pr-5 text-right">Rate</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {d.rows.toReversed().map((r) => (
                   <TableRow key={String(r.month)}>
-                    <TableCell className="pl-5">
+                    <TableCell className="pl-5 whitespace-nowrap">
                       {monthShortYear(String(r.month))}
+                      {r.month === current ? (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          so far
+                        </span>
+                      ) : null}
                     </TableCell>
                     {d.categories.map((c) => (
                       <TableCell
@@ -162,9 +175,12 @@ function Trends() {
                       </TableCell>
                     ))}
                     <TableCell className="text-right tabular-nums">
+                      {money(n(r, "incomeCents"), { whole: true })}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
                       {money(n(r, "spendingCents"), { whole: true })}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="hidden text-right sm:table-cell">
                       <Amount cents={n(r, "netCents")} tone="signed" whole />
                     </TableCell>
                     <TableCell className="pr-5 text-right text-muted-foreground tabular-nums">

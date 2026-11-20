@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react"
+import { Children, type ComponentProps, type ReactNode } from "react"
 import { cn } from "@zsrobinson/shell"
 import {
   Card,
@@ -15,7 +15,10 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@zsrobinson/shell/ui/empty"
-import { ChartRangeSelect } from "@zsrobinson/shell/blocks/chart-card"
+import { Button } from "@zsrobinson/shell/ui/button"
+import { Link } from "@tanstack/react-router"
+import { ArrowRightIcon } from "lucide-react"
+import { Choice } from "@/components/pickers"
 import { money, RANGE_OPTIONS } from "@/lib/format"
 import type { Range } from "@/lib/types"
 
@@ -97,7 +100,7 @@ export function SectionCard({
   flush?: boolean
 }) {
   return (
-    <Card className={cn("min-w-0", flush && "pb-0", className)}>
+    <Card className={cn("min-w-0", flush && "gap-2 pb-0", className)}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {action ? (
@@ -125,8 +128,10 @@ export function Stat({
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-xl font-semibold tracking-tight tabular-nums">
+      <span className="truncate text-xs text-muted-foreground sm:text-sm">
+        {label}
+      </span>
+      <span className="text-lg font-semibold tracking-tight tabular-nums sm:text-xl">
         {children}
       </span>
       {detail ? (
@@ -136,16 +141,55 @@ export function Stat({
   )
 }
 
-/** A row of figures that wraps to two columns on a phone. */
-export function StatRow({ className, ...props }: ComponentProps<"div">) {
+/** A row of figures: up to three across on a phone (four make a 2×2), one line on wider screens. */
+export function StatRow({
+  className,
+  children,
+  ...props
+}: ComponentProps<"div">) {
+  const count = Children.toArray(children).filter(Boolean).length
   return (
     <div
       className={cn(
-        "grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-10",
+        "grid gap-x-4 gap-y-4 sm:flex sm:flex-wrap sm:gap-x-10",
+        count === 4 || count === 2
+          ? "grid-cols-2"
+          : count >= 3
+            ? "grid-cols-3"
+            : "grid-cols-1",
         className
       )}
       {...props}
-    />
+    >
+      {children}
+    </div>
+  )
+}
+
+/** The one style for a card's "go to" action: quiet, with an arrow. */
+export function CardLink({
+  to,
+  search,
+  params,
+  children,
+}: {
+  to: string
+  search?: Record<string, unknown>
+  params?: Record<string, string>
+  children: ReactNode
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      render={
+        <Link to={to} search={search as never} params={params as never} />
+      }
+      nativeButton={false}
+    >
+      {children}
+      <ArrowRightIcon data-icon="inline-end" />
+    </Button>
   )
 }
 
@@ -157,10 +201,14 @@ export function RangeSelect({
   onChange: (range: Range) => void
 }) {
   return (
-    <ChartRangeSelect<Range>
+    <Choice
+      aria-label="Time range"
+      size="sm"
+      align="end"
+      className="w-36"
       value={value}
-      onChange={onChange}
-      ranges={RANGE_OPTIONS as never}
+      onChange={(v) => onChange(v as Range)}
+      options={RANGE_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
     />
   )
 }

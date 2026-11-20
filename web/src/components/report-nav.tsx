@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router"
 import { Button } from "@zsrobinson/shell/ui/button"
+import type { Range } from "@/lib/types"
 
 const PAGES = [
   {
@@ -20,13 +21,16 @@ const PAGES = [
   },
 ] as const
 
-/** Report pages as a segmented row; the sidebar hides its sub-pages on a phone. */
-export function ReportNav() {
+/**
+ * Report pages as a segmented row (the sidebar hides its sub-pages on a
+ * phone). The chosen range travels with every tab.
+ */
+export function ReportNav({ range }: { range: Range }) {
   const pathname = useLocation({ select: (l) => l.pathname.replace(/\/$/, "") })
   return (
     <nav
       aria-label="Reports"
-      className="flex gap-1 rounded-full bg-muted p-0.5"
+      className="flex w-fit gap-1 rounded-full bg-muted p-0.5"
     >
       {PAGES.map((p) => {
         const active = p.match(pathname)
@@ -41,7 +45,11 @@ export function ReportNav() {
                 : "text-muted-foreground"
             }
             render={
-              <Link to={p.to} aria-current={active ? "page" : undefined} />
+              <Link
+                to={p.to}
+                search={{ range }}
+                aria-current={active ? "page" : undefined}
+              />
             }
             nativeButton={false}
           >
@@ -51,4 +59,13 @@ export function ReportNav() {
       })}
     </nav>
   )
+}
+
+/** Months of monthly history a range covers, for charts drawn by month. */
+export function rangeMonths(range: Range, today: string) {
+  if (range === "1m" || range === "3m") return 3
+  if (range === "6m") return 6
+  if (range === "ytd") return Math.max(3, Number(today.slice(5, 7)))
+  if (range === "1y") return 12
+  return 24
 }

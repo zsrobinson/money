@@ -1,32 +1,28 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { FormStack, Page, PageHeader, PageTitle } from "@zsrobinson/shell"
+import { Page, PageHeader, PageStack, PageTitle } from "@zsrobinson/shell"
 import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
-import { QueryError } from "@zsrobinson/shell/blocks/query-error"
-import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@zsrobinson/shell/ui/field"
 import { Input } from "@zsrobinson/shell/ui/input"
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@zsrobinson/shell/ui/native-select"
 import { Switch } from "@zsrobinson/shell/ui/switch"
 import { EyeIcon, EyeOffIcon, PlusIcon, Trash2Icon } from "lucide-react"
 import { Loading, SectionCard } from "@/components/money"
+import { Choice } from "@/components/pickers"
+import { SourceList } from "@/components/sources"
 import { usePageTitle } from "@/lib/crumb"
 import { pluralize, RANGE_OPTIONS } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import {
   accountsQuery,
   categoriesQuery,
-  metaQuery,
   settingsQuery,
   tagsQuery,
 } from "@/lib/queries"
@@ -37,6 +33,14 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 })
 
+const SECTIONS = [
+  { id: "connections", label: "Connections" },
+  { id: "preferences", label: "Preferences" },
+  { id: "categories", label: "Categories" },
+  { id: "tags", label: "Tags" },
+  { id: "accounts", label: "Accounts" },
+]
+
 function SettingsPage() {
   usePageTitle("Settings")
   return (
@@ -44,71 +48,64 @@ function SettingsPage() {
       <PageHeader>
         <PageTitle>Settings</PageTitle>
       </PageHeader>
-      <FormStack>
-        <Sources />
-        <Preferences />
-        <Categories />
-        <Tags />
-        <Accounts />
-      </FormStack>
+      <div className="grid items-start gap-4 lg:grid-cols-[11rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Settings sections"
+          className="flex gap-1 overflow-x-auto lg:sticky lg:top-16 lg:flex-col"
+        >
+          {SECTIONS.map((s) => (
+            <Button
+              key={s.id}
+              variant="ghost"
+              size="sm"
+              className="justify-start text-muted-foreground"
+              render={<a href={`#${s.id}`} />}
+              nativeButton={false}
+            >
+              {s.label}
+            </Button>
+          ))}
+        </nav>
+        <PageStack className="max-w-3xl">
+          <Section id="connections">
+            <SectionCard title="Connections" flush>
+              <SourceList />
+              <p className="border-t px-5 py-3 text-xs text-muted-foreground">
+                Connections sync on a schedule. Sync now asks for an early
+                refresh of existing connections; adding an institution happens
+                on the server.
+              </p>
+            </SectionCard>
+          </Section>
+          <Section id="preferences">
+            <Preferences />
+          </Section>
+          <Section id="categories">
+            <Categories />
+          </Section>
+          <Section id="tags">
+            <Tags />
+          </Section>
+          <Section id="accounts">
+            <Accounts />
+          </Section>
+        </PageStack>
+      </div>
     </Page>
   )
 }
 
-const STATUS: Record<
-  string,
-  { label: string; variant: "secondary" | "destructive" | "outline" }
-> = {
-  healthy: { label: "Up to date", variant: "secondary" },
-  stale: { label: "Behind", variant: "destructive" },
-  error: { label: "Failing", variant: "destructive" },
-  disabled: { label: "Paused", variant: "outline" },
-}
-
-function Sources() {
-  const meta = useQuery(metaQuery)
-  return (
-    <SectionCard title="Connections" flush>
-      {meta.isError ? (
-        <QueryError title="Connections failed to load" error={meta.error} />
-      ) : null}
-      {!meta.data ? (
-        <Loading rows={3} className="px-5 pb-5" />
-      ) : (
-        <>
-          <ul className="flex flex-col divide-y divide-border/70">
-            {meta.data.sources.map((s) => {
-              const status = STATUS[s.status] ?? STATUS.error
-              return (
-                <li
-                  key={s.id}
-                  className="flex min-h-14 items-center gap-3 px-5 py-2"
-                >
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium">
-                      {s.institution}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {pluralize(s.accounts, "account")}
-                      {s.lastSuccessAt
-                        ? ` · last synced ${new Date(s.lastSuccessAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
-                        : " · never synced"}
-                    </span>
-                  </span>
-                  <Badge variant={status.variant}>{status.label}</Badge>
-                </li>
-              )
-            })}
-          </ul>
-          <p className="border-t px-5 py-3 text-xs text-muted-foreground">
-            Connections sync on a schedule on the server. Adding or reconnecting
-            an institution happens there, not here.
-          </p>
-        </>
-      )}
-    </SectionCard>
-  )
-}
+const Section = ({
+  id,
+  children,
+}: {
+  id: string
+  children: React.ReactNode
+}) => (
+  <section id={id} className="scroll-mt-16">
+    {children}
+  </section>
+)
 
 function Preferences() {
   const settings = useQuery(settingsQuery)
@@ -119,26 +116,24 @@ function Preferences() {
   return (
     <SectionCard title="Preferences">
       {!s ? (
-        <Loading rows={3} />
+        <Loading rows={2} />
       ) : (
         <FieldGroup>
           <Field orientation="horizontal" className="justify-between">
             <FieldLabel htmlFor="pref-range">Default chart range</FieldLabel>
-            <NativeSelect
+            <Choice
               id="pref-range"
+              className="w-40"
+              align="end"
               value={s.defaultRange}
-              onChange={(e) =>
-                save.mutate({
-                  defaultRange: e.target.value as Settings["defaultRange"],
-                })
+              onChange={(v) =>
+                save.mutate({ defaultRange: v as Settings["defaultRange"] })
               }
-            >
-              {RANGE_OPTIONS.map((r) => (
-                <NativeSelectOption key={r.value} value={r.value}>
-                  {r.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              options={RANGE_OPTIONS.map((r) => ({
+                value: r.value,
+                label: r.label,
+              }))}
+            />
           </Field>
           <Field orientation="horizontal">
             <Switch
@@ -161,10 +156,17 @@ function Preferences() {
   )
 }
 
+const GROUP_LABEL = {
+  income: "Income",
+  expense: "Spending",
+  transfer: "Transfer",
+} as const
+
 function Categories() {
   const categories = useQuery(categoriesQuery)
   const [label, setLabel] = useState("")
   const [parent, setParent] = useState("food")
+  const [error, setError] = useState<string | null>(null)
   const create = useSend<{ label: string; parent: string }>(
     "POST",
     "/api/categories",
@@ -175,38 +177,39 @@ function Categories() {
   )
   const list = categories.data ?? []
   const tops = list.filter((c) => !c.parent && c.group !== "transfer")
+  const add = () => {
+    if (!label.trim()) return setError("Name the category")
+    setError(null)
+    create.mutate({ label: label.trim(), parent })
+  }
   return (
     <SectionCard title="Categories" flush>
-      <div className="flex flex-wrap items-end gap-2 px-5 pb-4">
-        <Field className="min-w-40 flex-1">
+      <div className="flex flex-wrap items-start gap-2 px-5 pb-4">
+        <Field className="min-w-40 flex-1" data-invalid={!!error}>
           <FieldLabel htmlFor="new-category">New category</FieldLabel>
           <Input
             id="new-category"
-            placeholder="Coffee shops"
+            placeholder="Name"
             value={label}
+            aria-invalid={!!error}
             onChange={(e) => setLabel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
           />
+          {error ? <FieldError>{error}</FieldError> : null}
         </Field>
         <Field className="w-auto">
           <FieldLabel htmlFor="new-category-parent">Inside</FieldLabel>
-          <NativeSelect
+          <Choice
             id="new-category-parent"
+            className="w-44"
             value={parent}
-            onChange={(e) => setParent(e.target.value)}
-          >
-            {tops.map((c) => (
-              <NativeSelectOption key={c.code} value={c.code}>
-                {c.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            onChange={setParent}
+            options={tops.map((c) => ({ value: c.code, label: c.label }))}
+          />
         </Field>
-        <Button
-          disabled={!label.trim() || create.isPending}
-          onClick={() => create.mutate({ label: label.trim(), parent })}
-        >
+        <Button className="mt-6" disabled={create.isPending} onClick={add}>
           <PlusIcon data-icon="inline-start" />
-          Add
+          Add category
         </Button>
       </div>
       <ul className="flex flex-col divide-y divide-border/70 border-t">
@@ -226,18 +229,20 @@ function CategoryRow({ category: c }: { category: Category }) {
   const patch = useSend<{ label?: string; hidden?: boolean }>(
     "PATCH",
     `/api/categories/${c.code}`,
-    { success: "Category saved" }
+    {
+      success: "Category saved",
+    }
   )
   const remove = useSend("DELETE", `/api/categories/${c.code}`, {
     success: `Deleted ${c.label}`,
   })
   return (
     <li
-      className={`flex min-h-12 items-center gap-2 py-1.5 pr-3 ${c.parent ? "pl-9" : "pl-5"} ${c.hidden ? "opacity-60" : ""}`}
+      className={`flex min-h-12 items-center gap-2 py-1.5 pr-3 ${c.parent ? "pl-8" : "pl-3"} ${c.hidden ? "opacity-60" : ""}`}
     >
       <Input
         aria-label={`Name for ${c.label}`}
-        className="h-8 max-w-64 border-transparent bg-transparent px-2 font-medium shadow-none hover:bg-muted/60 focus-visible:bg-background"
+        className="h-8 min-w-0 flex-1 truncate border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-64"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         onBlur={() =>
@@ -247,23 +252,20 @@ function CategoryRow({ category: c }: { category: Category }) {
         }
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       />
-      <span className="hidden text-xs text-muted-foreground sm:inline">
-        {c.group === "income"
-          ? "Income"
-          : c.group === "transfer"
-            ? "Transfer"
-            : ""}
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+        {c.parent ? "" : GROUP_LABEL[c.group]}
       </span>
       <Link
         to="/reports/categories/$code"
         params={{ code: c.code }}
-        className="ml-auto text-xs whitespace-nowrap text-muted-foreground tabular-nums underline-offset-4 hover:underline"
+        className="ml-auto hidden text-xs whitespace-nowrap text-muted-foreground tabular-nums underline-offset-4 hover:underline sm:inline"
       >
         {pluralize(c.transactions, "transaction")}
       </Link>
       <Button
         size="icon-sm"
         variant="ghost"
+        className="max-sm:ml-auto"
         aria-label={c.hidden ? `Show ${c.label}` : `Hide ${c.label}`}
         onClick={() => patch.mutate({ hidden: !c.hidden })}
       >
@@ -289,7 +291,7 @@ function CategoryRow({ category: c }: { category: Category }) {
           elsewhere first.
         </ConfirmAction>
       ) : (
-        <span className="size-7" aria-hidden />
+        <span className="size-7 shrink-0" aria-hidden />
       )}
     </li>
   )
@@ -305,37 +307,49 @@ const HUES = [
   ["pu", "Purple"],
   ["ma", "Magenta"],
 ] as const
+const hueName = (hue: string) =>
+  ({
+    re: "red",
+    or: "orange",
+    ye: "yellow",
+    gr: "green",
+    cy: "cyan",
+    bl: "blue",
+    pu: "purple",
+    ma: "magenta",
+  })[hue] ?? "yellow"
 
 function Tags() {
   const tags = useQuery(tagsQuery)
   const [name, setName] = useState("")
+  const [error, setError] = useState<string | null>(null)
   const create = useSend<{ name: string }>("POST", "/api/tags", {
     success: (_, v) => `Added ${v.name}`,
     onSuccess: () => setName(""),
   })
+  const add = () => {
+    if (!name.trim()) return setError("Name the tag")
+    setError(null)
+    create.mutate({ name: name.trim() })
+  }
   return (
     <SectionCard title="Tags" flush>
-      <div id="tags" className="flex items-end gap-2 px-5 pb-4">
-        <Field className="flex-1">
+      <div className="flex flex-wrap items-start gap-2 px-5 pb-4">
+        <Field className="min-w-40 flex-1" data-invalid={!!error}>
           <FieldLabel htmlFor="new-tag">New tag</FieldLabel>
           <Input
             id="new-tag"
-            placeholder="Tax deductible"
+            placeholder="Name"
             value={name}
+            aria-invalid={!!error}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) =>
-              e.key === "Enter" &&
-              name.trim() &&
-              create.mutate({ name: name.trim() })
-            }
+            onKeyDown={(e) => e.key === "Enter" && add()}
           />
+          {error ? <FieldError>{error}</FieldError> : null}
         </Field>
-        <Button
-          disabled={!name.trim() || create.isPending}
-          onClick={() => create.mutate({ name: name.trim() })}
-        >
+        <Button className="mt-6" disabled={create.isPending} onClick={add}>
           <PlusIcon data-icon="inline-start" />
-          Add
+          Add tag
         </Button>
       </div>
       {tags.data?.length ? (
@@ -377,7 +391,7 @@ function TagRow({ tag: t }: { tag: Tag }) {
       />
       <Input
         aria-label={`Name for ${t.name}`}
-        className="h-8 max-w-64 border-transparent bg-transparent px-2 font-medium shadow-none hover:bg-muted/60 focus-visible:bg-background"
+        className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-64"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() =>
@@ -387,24 +401,20 @@ function TagRow({ tag: t }: { tag: Tag }) {
         }
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       />
-      <NativeSelect
-        size="sm"
+      <Choice
         aria-label={`Colour for ${t.name}`}
+        size="sm"
+        align="end"
         className="ml-auto w-28 shrink-0"
         value={t.hue ?? ""}
-        onChange={(e) => patch.mutate({ hue: e.target.value || null })}
-      >
-        <NativeSelectOption value="">No colour</NativeSelectOption>
-        {HUES.map(([value, label]) => (
-          <NativeSelectOption key={value} value={value}>
-            {label}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
+        placeholder="No colour"
+        onChange={(v) => patch.mutate({ hue: v || null })}
+        options={HUES.map(([value, label]) => ({ value, label }))}
+      />
       <Link
         to="/transactions"
         search={{ tag: t.id }}
-        className="text-xs whitespace-nowrap text-muted-foreground tabular-nums underline-offset-4 hover:underline"
+        className="hidden text-xs whitespace-nowrap text-muted-foreground tabular-nums underline-offset-4 hover:underline sm:inline"
       >
         {pluralize(t.transactions, "transaction")}
       </Link>
@@ -430,18 +440,6 @@ function TagRow({ tag: t }: { tag: Tag }) {
   )
 }
 
-const hueName = (hue: string) =>
-  ({
-    re: "red",
-    or: "orange",
-    ye: "yellow",
-    gr: "green",
-    cy: "cyan",
-    bl: "blue",
-    pu: "purple",
-    ma: "magenta",
-  })[hue] ?? "yellow"
-
 function Accounts() {
   const accounts = useQuery(accountsQuery)
   const save = useSend<{ id: string; patch: Record<string, unknown> }>(
@@ -454,16 +452,16 @@ function Accounts() {
   )
   return (
     <SectionCard title="Accounts" flush>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 border-b px-5 pb-2 text-xs text-muted-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-x-3 border-b px-5 pb-2 text-xs text-muted-foreground">
         <span>Account</span>
-        <span className="w-16 text-center">Net worth</span>
-        <span className="w-16 text-center">Shown</span>
+        <span className="text-center">Net worth</span>
+        <span className="text-center">Shown</span>
       </div>
       <ul className="flex flex-col divide-y divide-border/70">
         {(accounts.data ?? []).map((a) => (
           <li
             key={a.id}
-            className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 px-5 py-1.5"
+            className="grid min-h-12 grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-x-3 px-5 py-1.5"
           >
             <Link
               to="/accounts/$id"
@@ -476,7 +474,7 @@ function Accounts() {
                 {a.availability !== "available" ? " · Closed" : ""}
               </span>
             </Link>
-            <span className="flex w-16 justify-center">
+            <span className="flex justify-center">
               <Switch
                 aria-label={`Count ${a.name} in net worth`}
                 checked={!a.excludeNetWorth}
@@ -485,7 +483,7 @@ function Accounts() {
                 }
               />
             </span>
-            <span className="flex w-16 justify-center">
+            <span className="flex justify-center">
               <Switch
                 aria-label={`Show ${a.name} in lists`}
                 checked={!a.hidden}

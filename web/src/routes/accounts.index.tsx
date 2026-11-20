@@ -16,7 +16,15 @@ import {
   StatRow,
 } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
-import { accountKind, epoch, epochFullDate, money } from "@/lib/format"
+import {
+  accountKind,
+  epoch,
+  epochFullDate,
+  money,
+  moneyTick,
+  timeTick,
+} from "@/lib/format"
+import { SourceList } from "@/components/sources"
 import { accountsQuery, summaryQuery } from "@/lib/queries"
 import type { AccountListItem, Range } from "@/lib/types"
 
@@ -39,6 +47,12 @@ function Accounts() {
   // excluded from net worth, hidden ones included.
   const summary = useQuery(summaryQuery(range))
   const nw = summary.data?.netWorth
+  const points = (nw?.series ?? []).map((p) => ({
+    time: epoch(p.date),
+    assets: p.assets / 100,
+    liabilities: p.liabilities / 100,
+    net: p.net / 100,
+  }))
   const [showHistorical, setShowHistorical] = useState(false)
   const list = accounts.data ?? []
   const open = list.filter((a) => a.availability === "available" && !a.hidden)
@@ -93,12 +107,7 @@ function Accounts() {
             <TrendChart
               label="Assets, liabilities and net worth over time"
               loading={!nw}
-              data={(nw?.series ?? []).map((p) => ({
-                time: epoch(p.date),
-                assets: p.assets / 100,
-                liabilities: p.liabilities / 100,
-                net: p.net / 100,
-              }))}
+              data={points}
               config={{
                 assets: { label: "Assets", color: "var(--chart-positive)" },
                 liabilities: {
@@ -109,6 +118,8 @@ function Accounts() {
               }}
               format={(v) => money(Math.round(v * 100), { whole: true })}
               formatTime={epochFullDate}
+              formatTick={moneyTick}
+              formatTimeTick={timeTick(points)}
               className="h-60"
             />
           </SectionCard>
@@ -153,6 +164,9 @@ function Accounts() {
               )}
             </SectionCard>
           ) : null}
+          <SectionCard title="Connections" flush>
+            <SourceList />
+          </SectionCard>
         </PageStack>
       )}
     </Page>
@@ -176,6 +190,14 @@ function AccountRows({ accounts }: { accounts: AccountListItem[] }) {
                 {a.mask ? ` ·· ${a.mask}` : ""}
                 {a.excludeNetWorth ? " · Not in net worth" : ""}
                 {a.availability !== "available" ? " · Closed" : ""}
+                {a.sourceStatus !== "healthy" &&
+                a.availability === "available" ? (
+                  <span className="text-negative">
+                    {" "}
+                    · Sync{" "}
+                    {a.sourceStatus === "stale" ? "behind" : a.sourceStatus}
+                  </span>
+                ) : null}
               </span>
             </span>
             <span className="hidden sm:block" aria-hidden>
@@ -191,9 +213,7 @@ function AccountRows({ accounts }: { accounts: AccountListItem[] }) {
                   config={{
                     balance: {
                       label: "Balance",
-                      color: a.liability
-                        ? "var(--chart-neutral)"
-                        : "var(--chart-1)",
+                      color: "var(--chart-1)",
                     },
                   }}
                 />

@@ -2,7 +2,9 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { FormStack } from "@zsrobinson/shell"
+import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import { Button } from "@zsrobinson/shell/ui/button"
+import { Checkbox } from "@zsrobinson/shell/ui/checkbox"
 import {
   Field,
   FieldDescription,
@@ -20,6 +22,7 @@ import {
 } from "@zsrobinson/shell/ui/input-group"
 import { ToggleGroup, ToggleGroupItem } from "@zsrobinson/shell/ui/toggle-group"
 import { SectionCard } from "@/components/money"
+import { DatePicker } from "@/components/pickers"
 import { money } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { accountsQuery } from "@/lib/queries"
@@ -39,7 +42,7 @@ export function GoalForm({ goal }: { goal?: Goal }) {
   const [name, setName] = useState(goal?.name ?? "")
   const [kind, setKind] = useState<"save" | "payoff">(goal?.kind ?? "save")
   const [target, setTarget] = useState(
-    goal ? String(goal.targetCents / 100) : ""
+    goal ? (goal.targetCents / 100).toLocaleString() : ""
   )
   const [date, setDate] = useState(goal?.targetDate ?? "")
   const [ids, setIds] = useState<string[]>(goal?.accountIds ?? [])
@@ -52,7 +55,10 @@ export function GoalForm({ goal }: { goal?: Goal }) {
   })
   const update = useSend<Body>("PUT", `/api/goals/${goal?.id}`, {
     success: "Goal saved",
-    onSuccess: () => done(goal?.id),
+  })
+  const remove = useSend("DELETE", `/api/goals/${goal?.id}`, {
+    success: "Goal deleted",
+    onSuccess: () => done(),
   })
   const eligible = (accounts.data ?? []).filter(
     (a) =>
@@ -84,14 +90,14 @@ export function GoalForm({ goal }: { goal?: Goal }) {
     .reduce((s, a) => s + Math.abs(a.balanceCents ?? 0), 0)
   return (
     <FormStack>
-      <SectionCard title={goal ? "Goal" : "New goal"}>
-        <FieldGroup>
+      <SectionCard title={goal ? "Edit goal" : "Details"}>
+        <FieldGroup className="@container">
           <Field data-invalid={tried && !!errors.name}>
             <FieldLabel htmlFor="goal-name">Name</FieldLabel>
             <Input
               id="goal-name"
               value={name}
-              placeholder="Emergency fund"
+              placeholder="What are you saving for?"
               onChange={(e) => setName(e.target.value)}
               aria-invalid={tried && !!errors.name}
             />
@@ -110,18 +116,17 @@ export function GoalForm({ goal }: { goal?: Goal }) {
               <ToggleGroupItem value="payoff">Pay off debt</ToggleGroupItem>
             </ToggleGroup>
           </FieldSet>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 @lg:grid-cols-2">
             <Field data-invalid={tried && !!errors.target}>
               <FieldLabel htmlFor="goal-target">
-                {kind === "payoff"
-                  ? "Starting balance to pay off"
-                  : "Target amount"}
+                {kind === "payoff" ? "Balance to pay off" : "Target amount"}
               </FieldLabel>
               <InputGroup>
                 <InputGroupAddon>$</InputGroupAddon>
                 <InputGroupInput
                   id="goal-target"
                   inputMode="decimal"
+                  placeholder="0"
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   aria-invalid={tried && !!errors.target}
@@ -133,11 +138,11 @@ export function GoalForm({ goal }: { goal?: Goal }) {
             </Field>
             <Field>
               <FieldLabel htmlFor="goal-date">Target date</FieldLabel>
-              <Input
+              <DatePicker
                 id="goal-date"
-                type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                placeholder="No date"
+                onChange={setDate}
               />
               <FieldDescription>
                 Optional. Used to tell whether you are on track.
@@ -156,15 +161,11 @@ export function GoalForm({ goal }: { goal?: Goal }) {
                   key={a.id}
                   className="flex min-h-11 cursor-pointer items-center gap-3 px-3 text-sm"
                 >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-(--primary)"
+                  <Checkbox
                     checked={chosen.includes(a.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(on) =>
                       setIds((prev) =>
-                        e.target.checked
-                          ? [...prev, a.id]
-                          : prev.filter((x) => x !== a.id)
+                        on ? [...prev, a.id] : prev.filter((x) => x !== a.id)
                       )
                     }
                   />
@@ -194,10 +195,27 @@ export function GoalForm({ goal }: { goal?: Goal }) {
           </FieldSet>
         </FieldGroup>
       </SectionCard>
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => done(goal?.id)}>
-          Cancel
-        </Button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {goal ? (
+          <ConfirmAction
+            trigger={
+              <Button variant="ghost" className="mr-auto text-destructive">
+                Delete goal
+              </Button>
+            }
+            title={`Delete ${goal.name}?`}
+            confirmLabel="Delete goal"
+            destructive
+            onConfirm={() => remove.mutateAsync()}
+          >
+            Your accounts and transactions are unchanged.
+          </ConfirmAction>
+        ) : null}
+        {goal ? null : (
+          <Button variant="outline" onClick={() => done()}>
+            Cancel
+          </Button>
+        )}
         <Button
           disabled={create.isPending || update.isPending}
           onClick={submit}

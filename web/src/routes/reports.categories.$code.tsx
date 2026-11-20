@@ -14,7 +14,13 @@ import { Button } from "@zsrobinson/shell/ui/button"
 import { ArrowRightIcon } from "lucide-react"
 import { Loading, Meter, SectionCard, Stat, StatRow } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
-import { epochMonth, money, monthEpoch, pluralize } from "@/lib/format"
+import {
+  epochMonthYear,
+  money,
+  moneyTick,
+  monthEpoch,
+  pluralize,
+} from "@/lib/format"
 import { budgetsQuery, categoryDetailQuery } from "@/lib/queries"
 
 export const Route = createFileRoute("/reports/categories/$code")({
@@ -36,6 +42,13 @@ function CategoryDetail() {
   const income = d?.category.group === "income"
   const budget = budgets.data?.rows.find((r) => r.code === code)
   const thisMonth = d?.monthly.at(-1)?.cents ?? 0
+  // Your categories with their own budget are tracked there, not here.
+  const ownBudget = (d?.children ?? [])
+    .filter(
+      (c) =>
+        budgets.data?.rows.find((r) => r.code === c.code)?.budgetCents != null
+    )
+    .map((c) => c.label)
   const maxMerchant = Math.max(1, ...(d?.merchants.map((m) => m.cents) ?? [1]))
   return (
     <Page>
@@ -79,7 +92,14 @@ function CategoryDetail() {
       ) : (
         <>
           <StatRow>
-            <Stat label="This month">{money(thisMonth, { whole: true })}</Stat>
+            <Stat
+              label="This month"
+              detail={
+                d.children.length ? "with your categories inside" : undefined
+              }
+            >
+              {money(thisMonth, { whole: true })}
+            </Stat>
             <Stat label="Monthly average" detail="last 11 full months">
               {money(d.averageCents, { whole: true })}
             </Stat>
@@ -88,8 +108,8 @@ function CategoryDetail() {
             </Stat>
             {budget?.budgetCents != null ? (
               <Stat
-                label="Budget"
-                detail={`${money(budget.spentCents, { whole: true })} spent`}
+                label="Budget this month"
+                detail={`${money(budget.spentCents, { whole: true })} spent${ownBudget.length ? `, not counting ${ownBudget.join(", ")}` : ""}`}
               >
                 {money(budget.budgetCents, { whole: true })}
               </Stat>
@@ -110,7 +130,13 @@ function CategoryDetail() {
                 },
               }}
               format={(v) => money(Math.round(v * 100), { whole: true })}
-              formatTime={epochMonth}
+              formatTime={epochMonthYear}
+              formatTick={moneyTick}
+              references={
+                budget?.budgetCents != null
+                  ? [{ value: budget.budgetCents / 100, label: "Budget" }]
+                  : []
+              }
               className="h-56"
             />
           </SectionCard>
@@ -152,16 +178,19 @@ function CategoryDetail() {
               )}
             </SectionCard>
             {d.children.length ? (
-              <SectionCard title="Your categories inside">
-                <ul className="flex flex-col gap-2 text-sm">
+              <SectionCard title="Includes" flush>
+                <ul className="flex flex-col divide-y divide-border/70">
                   {d.children.map((c) => (
                     <li key={c.code}>
                       <Link
                         to="/reports/categories/$code"
                         params={{ code: c.code }}
-                        className="underline-offset-4 hover:underline"
+                        className="flex min-h-11 items-center justify-between gap-3 px-5 py-2 text-sm outline-none hover:bg-muted/60 focus-visible:bg-muted"
                       >
-                        {c.label}
+                        <span className="truncate">{c.label}</span>
+                        <span className="text-muted-foreground tabular-nums">
+                          {money(c.cents, { whole: true })} in 12 months
+                        </span>
                       </Link>
                     </li>
                   ))}

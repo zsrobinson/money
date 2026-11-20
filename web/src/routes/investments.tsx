@@ -30,9 +30,17 @@ import {
   StatRow,
 } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
-import { assetType, epoch, epochFullDate, money, percent } from "@/lib/format"
+import {
+  assetType,
+  epoch,
+  epochFullDate,
+  money,
+  moneyTick,
+  percent,
+  timeTick,
+} from "@/lib/format"
 import { investmentsQuery } from "@/lib/queries"
-import type { Range } from "@/lib/types"
+import type { Holding, Range } from "@/lib/types"
 
 export const Route = createFileRoute("/investments")({
   validateSearch: z.object({
@@ -42,6 +50,8 @@ export const Route = createFileRoute("/investments")({
   component: Investments,
 })
 
+const isCash = (h: Holding) => h.type.toLowerCase() === "cash"
+
 function Investments() {
   usePageTitle("Investments")
   const { range = "1y" } = Route.useSearch()
@@ -50,6 +60,10 @@ function Investments() {
   const d = q.data
   const first = d?.series[0]?.cents
   const last = d?.series.at(-1)?.cents
+  const points = (d?.series ?? []).map((p) => ({
+    time: epoch(p.date),
+    value: p.cents / 100,
+  }))
   return (
     <Page>
       <PageHeader>
@@ -81,10 +95,10 @@ function Investments() {
           <StatRow>
             <Stat label="Value">{money(d.totalCents, { whole: true })}</Stat>
             <Stat
-              label="Gain"
+              label="Gain on cost"
               detail={
                 d.costBasisCents
-                  ? `${percent(d.gainCents / d.costBasisCents, 1)} on cost`
+                  ? `${percent(d.gainCents / d.costBasisCents, 1)} on ${money(d.costBasisCents, { whole: true })}`
                   : undefined
               }
             >
@@ -96,26 +110,25 @@ function Investments() {
               </Stat>
             ) : null}
           </StatRow>
-          <PageGrid layout="wide">
-            <SectionCard title="Value over time">
+          <PageGrid layout="wide" className="items-stretch">
+            <SectionCard title="Value over time" className="h-full">
               <TrendChart
                 label="Investment value over time"
                 baseline="data"
-                data={d.series.map((p) => ({
-                  time: epoch(p.date),
-                  value: p.cents / 100,
-                }))}
+                data={points}
                 config={{ value: { label: "Value", color: "var(--chart-1)" } }}
                 format={(v) => money(Math.round(v * 100), { whole: true })}
+                formatTick={moneyTick}
                 formatTime={epochFullDate}
-                className="h-56"
+                formatTimeTick={timeTick(points)}
+                className="h-60"
               />
             </SectionCard>
-            <SectionCard title="Allocation">
+            <SectionCard title="Allocation" className="h-full">
               <DonutChart
                 label="Allocation by asset type"
                 totalLabel="invested"
-                format={(v) => money(v, { whole: true, compact: v >= 1e8 })}
+                format={(v) => money(v, { whole: true })}
                 data={d.allocation.map((a) => ({
                   key: a.type,
                   label: assetType(a.type),
@@ -141,7 +154,16 @@ function Investments() {
                     {money(a.holdingsCents, { whole: true })}
                   </span>
                 </div>
-                <Table>
+                {/* Fixed columns so every account's table lines up. */}
+                <Table className="table-fixed">
+                  <colgroup>
+                    <col />
+                    <col className="hidden w-28 sm:table-column" />
+                    <col className="hidden w-24 md:table-column" />
+                    <col className="hidden w-28 lg:table-column" />
+                    <col className="w-28" />
+                    <col className="w-28" />
+                  </colgroup>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="pl-5">Holding</TableHead>
@@ -151,45 +173,70 @@ function Investments() {
                       <TableHead className="hidden text-right md:table-cell">
                         Price
                       </TableHead>
+                      <TableHead className="hidden text-right lg:table-cell">
+                        Cost basis
+                      </TableHead>
                       <TableHead className="text-right">Value</TableHead>
                       <TableHead className="pr-5 text-right">Gain</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((h) => (
-                      <TableRow key={h.securityId}>
-                        <TableCell className="pl-5">
-                          <span className="flex min-w-0 flex-col">
-                            <span className="truncate font-medium">
-                              {h.ticker ?? h.name}
+                    {rows.map((h) => {
+                      const cash = isCash(h)
+                      return (
+                        <TableRow key={h.securityId}>
+                          <TableCell className="pl-5">
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate font-medium">
+                                {h.ticker ?? h.name}
+                              </span>
+                              <span className="truncate text-xs text-muted-foreground">
+                                {h.ticker ? h.name : assetType(h.type)}
+                              </span>
                             </span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {h.ticker ? h.name : assetType(h.type)}
-                            </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                          {h.quantity.toLocaleString(undefined, {
-                            maximumFractionDigits: 3,
-                          })}
-                        </TableCell>
-                        <TableCell className="hidden text-right tabular-nums md:table-cell">
-                          {h.price == null
-                            ? "—"
-                            : money(Math.round(h.price * 100))}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {money(h.valueCents, { whole: true })}
-                        </TableCell>
-                        <TableCell className="pr-5 text-right">
-                          {h.gainCents == null ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <Amount cents={h.gainCents} tone="signed" whole />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                            {cash
+                              ? "—"
+                              : h.quantity.toLocaleString(undefined, {
+                                  maximumFractionDigits: 3,
+                                })}
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums md:table-cell">
+                            {cash || h.price == null
+                              ? "—"
+                              : money(Math.round(h.price * 100))}
+                          </TableCell>
+                          <TableCell className="hidden text-right tabular-nums lg:table-cell">
+                            {cash || h.costBasisCents == null
+                              ? "—"
+                              : money(h.costBasisCents, { whole: true })}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {money(h.valueCents, { whole: true })}
+                          </TableCell>
+                          <TableCell className="pr-5 text-right">
+                            {cash ||
+                            h.gainCents == null ||
+                            !h.costBasisCents ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <span className="flex flex-col items-end">
+                                <Amount
+                                  cents={h.gainCents}
+                                  tone="signed"
+                                  whole
+                                />
+                                <span className="text-xs text-muted-foreground tabular-nums">
+                                  {h.gainCents >= 0 ? "+" : ""}
+                                  {percent(h.gainCents / h.costBasisCents, 1)}
+                                </span>
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </Card>

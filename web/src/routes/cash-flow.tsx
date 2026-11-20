@@ -12,10 +12,6 @@ import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Card } from "@zsrobinson/shell/ui/card"
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@zsrobinson/shell/ui/native-select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -24,6 +20,7 @@ import {
   TableRow,
 } from "@zsrobinson/shell/ui/table"
 import { z } from "zod"
+import { Choice } from "@/components/pickers"
 import {
   Amount,
   Loading,
@@ -35,6 +32,7 @@ import {
 import { usePageTitle } from "@/lib/crumb"
 import {
   epochMonthYear,
+  moneyTick,
   money,
   monthEpoch,
   monthName,
@@ -73,20 +71,24 @@ function CashFlow() {
       <PageHeader>
         <PageTitle>Cash flow</PageTitle>
         <PageActions>
-          <NativeSelect
+          <Choice
             aria-label="Months shown"
+            size="sm"
+            align="end"
+            className="w-40"
             value={String(months)}
-            onChange={(e) =>
+            onChange={(v) =>
               void navigate({
-                search: (p) => ({ ...p, months: Number(e.target.value) }),
+                search: (p) => ({ ...p, months: Number(v) }),
                 replace: true,
               })
             }
-          >
-            <NativeSelectOption value="6">Last 6 months</NativeSelectOption>
-            <NativeSelectOption value="12">Last 12 months</NativeSelectOption>
-            <NativeSelectOption value="24">Last 24 months</NativeSelectOption>
-          </NativeSelect>
+            options={[
+              { value: "6", label: "Last 6 months" },
+              { value: "12", label: "Last 12 months" },
+              { value: "24", label: "Last 24 months" },
+            ]}
+          />
         </PageActions>
       </PageHeader>
       {q.isError ? (
@@ -129,6 +131,7 @@ function CashFlow() {
                 spending: { label: "Spending", color: "var(--chart-negative)" },
               }}
               format={whole}
+              formatTick={moneyTick}
               formatTime={epochMonthYear}
               className="h-64"
             />
@@ -151,7 +154,7 @@ function CashFlow() {
                       data-state={
                         f.month === d.selected ? "selected" : undefined
                       }
-                      className="cursor-pointer"
+                      className="cursor-pointer data-[state=selected]:font-medium data-[state=selected]:[&>td:first-child]:shadow-[inset_3px_0_0_var(--primary)]"
                       onClick={() =>
                         void navigate({
                           search: (p) => ({ ...p, month: f.month }),
@@ -191,7 +194,12 @@ function CashFlow() {
               />
               <Breakdown
                 title={`Income in ${monthName(d.selected)}`}
-                rows={d.income}
+                rows={d.incomeSources.map((r) => ({
+                  ...r,
+                  code: r.key,
+                  label: r.name,
+                }))}
+                link="merchant"
               />
             </PageStack>
           </PageGrid>
@@ -204,9 +212,11 @@ function CashFlow() {
 function Breakdown({
   title,
   rows,
+  link = "category",
 }: {
   title: string
   rows: { code: string; label: string; cents: number; count: number }[]
+  link?: "category" | "merchant"
 }) {
   const total = rows.reduce((s, r) => s + Math.max(0, r.cents), 0)
   return (
@@ -223,8 +233,14 @@ function Breakdown({
           {rows.map((r) => (
             <li key={r.code}>
               <Link
-                to="/reports/categories/$code"
-                params={{ code: r.code }}
+                to={
+                  link === "merchant"
+                    ? "/reports/merchants/$key"
+                    : "/reports/categories/$code"
+                }
+                params={
+                  link === "merchant" ? { key: r.code } : { code: r.code }
+                }
                 className="flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex justify-between gap-3 text-sm">

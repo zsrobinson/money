@@ -18,7 +18,7 @@ import {
   CardAction,
 } from "@zsrobinson/shell/ui/card"
 import { PlusIcon } from "lucide-react"
-import { EmptyState, Loading, Meter } from "@/components/money"
+import { EmptyState, Loading, Meter, Stat, StatRow } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
 import { fullDate, money, percent } from "@/lib/format"
 import { goalsQuery } from "@/lib/queries"
@@ -64,62 +64,88 @@ function Goals() {
       {!q.data ? (
         <Loading rows={6} />
       ) : q.data.length ? (
-        <PageGrid layout="two">
-          {q.data.map((g) => (
-            <Card key={g.id} className="relative min-w-0">
-              <CardHeader>
-                <CardTitle>
-                  <Link
-                    to="/goals/$id"
-                    params={{ id: g.id }}
-                    className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring"
-                  >
-                    {g.name}
-                  </Link>
-                </CardTitle>
-                <CardAction>
-                  <GoalStatus goal={g} />
-                </CardAction>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xl font-semibold tracking-tight tabular-nums">
-                    {money(
-                      g.kind === "payoff"
-                        ? g.targetCents - g.currentCents
-                        : g.currentCents,
-                      { whole: true }
-                    )}
-                  </span>
-                  <span className="text-sm text-muted-foreground tabular-nums">
-                    {g.kind === "payoff" ? "paid of " : "of "}
-                    {money(g.targetCents, { whole: true })}
-                  </span>
-                </div>
-                <Meter
-                  label={`${g.name} progress`}
-                  value={g.progress}
-                  tone={g.progress >= 1 ? "positive" : "default"}
-                />
-                <div className="flex justify-between gap-3 text-xs text-muted-foreground">
-                  <span>
-                    {percent(g.progress)}{" "}
-                    {g.kind === "payoff" ? "paid off" : "saved"}
-                  </span>
-                  <span>
-                    {g.progress >= 1
-                      ? "Done"
-                      : g.projectedDate
-                        ? `Projected ${fullDate(g.projectedDate)}`
-                        : g.targetDate
-                          ? `Target ${fullDate(g.targetDate)}`
-                          : "No recent progress"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </PageGrid>
+        <>
+          <StatRow>
+            <Stat label="Saved toward goals">
+              {money(
+                q.data
+                  .filter((g) => g.kind === "save")
+                  .reduce(
+                    (s, g) => s + Math.min(g.currentCents, g.targetCents),
+                    0
+                  ),
+                { whole: true }
+              )}
+            </Stat>
+            <Stat label="Debt left">
+              {money(
+                q.data
+                  .filter((g) => g.kind === "payoff")
+                  .reduce((s, g) => s + g.currentCents, 0),
+                { whole: true }
+              )}
+            </Stat>
+            <Stat label="On track" detail={`of ${q.data.length} goals`}>
+              {q.data.filter((g) => g.progress >= 1 || g.onTrack).length}
+            </Stat>
+          </StatRow>
+          <PageGrid className="sm:grid-cols-2 lg:grid-cols-3">
+            {q.data.map((g) => (
+              <Card key={g.id} className="relative min-w-0">
+                <CardHeader>
+                  <CardTitle>
+                    <Link
+                      to="/goals/$id"
+                      params={{ id: g.id }}
+                      className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                    >
+                      {g.name}
+                    </Link>
+                  </CardTitle>
+                  <CardAction>
+                    <GoalStatus goal={g} />
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-xl font-semibold tracking-tight tabular-nums">
+                      {money(
+                        g.kind === "payoff"
+                          ? g.targetCents - g.currentCents
+                          : g.currentCents,
+                        { whole: true }
+                      )}
+                    </span>
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {g.kind === "payoff" ? "paid of " : "of "}
+                      {money(g.targetCents, { whole: true })}
+                    </span>
+                  </div>
+                  <Meter
+                    label={`${g.name} progress`}
+                    value={g.progress}
+                    tone={g.progress >= 1 ? "positive" : "default"}
+                  />
+                  <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                    <span>
+                      {percent(g.progress)}{" "}
+                      {g.kind === "payoff" ? "paid off" : "saved"}
+                    </span>
+                    <span>
+                      {g.progress >= 1
+                        ? "Done"
+                        : g.projectedDate
+                          ? `Projected ${fullDate(g.projectedDate)}`
+                          : g.targetDate
+                            ? `Target ${fullDate(g.targetDate)}`
+                            : "No recent progress"}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </PageGrid>
+        </>
       ) : (
         <EmptyState
           title="No goals yet"

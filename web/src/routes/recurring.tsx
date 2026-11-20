@@ -34,7 +34,16 @@ import {
   StatRow,
 } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
-import { CADENCE, money, pluralize, relativeDay, shortDate } from "@/lib/format"
+import {
+  CADENCE,
+  cadenceDays,
+  daysBetween,
+  longDate,
+  money,
+  pluralize,
+  relativeDay,
+  shortDate,
+} from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { recurringQuery } from "@/lib/queries"
 import type { Recurring } from "@/lib/types"
@@ -44,6 +53,27 @@ export const Route = createFileRoute("/recurring")({
   component: RecurringPage,
 })
 
+const addDays = (date: string, days: number) =>
+  new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10)
+
+/** Every expected charge and payment in the window, repeating ones included. */
+function timeline(items: Recurring[], today: string, days: number) {
+  const end = addDays(today, days)
+  const out: { date: string; item: Recurring }[] = []
+  for (const item of items) {
+    if (item.status !== "active") continue
+    for (
+      let d = item.nextDate;
+      d <= end;
+      d = addDays(d, cadenceDays(item.cadence))
+    )
+      if (d >= today) out.push({ date: d, item })
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+}
+
 function RecurringPage() {
   usePageTitle("Recurring")
   const q = useQuery(recurringQuery)
@@ -52,10 +82,14 @@ function RecurringPage() {
   const active = items.filter((i) => i.status === "active")
   const bills = active.filter((i) => i.kind === "expense")
   const income = active.filter((i) => i.kind === "income")
-  const soon = bills.filter(
-    (i) => d && i.nextDate >= d.today && i.nextDate <= addDaysIso(d.today, 30)
-  )
   const stopped = items.filter((i) => i.status !== "active")
+  const upcoming = d ? timeline(items, d.today, 30) : []
+  const dueOut = upcoming
+    .filter((u) => u.item.kind === "expense")
+    .reduce((s, u) => s - u.item.amountCents, 0)
+  const dueIn = upcoming
+    .filter((u) => u.item.kind === "income")
+    .reduce((s, u) => s + u.item.amountCents, 0)
   return (
     <Page>
       <PageHeader>
@@ -75,7 +109,7 @@ function RecurringPage() {
           <StatRow>
             <Stat
               label="Bills a month"
-              detail={pluralize(bills.length, "active bill")}
+              detail={pluralize(bills.length, "bill")}
             >
               {money(d.monthlyExpenseCents, { whole: true })}
             </Stat>
@@ -85,10 +119,11 @@ function RecurringPage() {
             >
               {money(d.monthlyIncomeCents, { whole: true })}
             </Stat>
-            <Stat label="Due in 30 days">
-              {money(-soon.reduce((s, i) => s + i.amountCents, 0), {
-                whole: true,
-              })}
+            <Stat
+              label="Next 30 days"
+              detail={`${money(dueIn, { whole: true })} in`}
+            >
+              {money(dueOut, { whole: true })} out
             </Stat>
           </StatRow>
           <PageGrid layout="wide">
@@ -113,28 +148,38 @@ function RecurringPage() {
                 />
               ) : null}
             </PageStack>
-            <SectionCard title="Next 30 days">
-              {soon.length ? (
-                <ol className="flex flex-col gap-3">
-                  {soon.map((i) => (
-                    <li
-                      key={i.key}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium">
-                          {i.merchant}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {relativeDay(i.nextDate, d.today)}
-                        </span>
-                      </span>
-                      <Amount cents={i.amountCents} />
+            <SectionCard
+              title="Next 30 days"
+              flush
+              className="lg:sticky lg:top-16"
+            >
+              {upcoming.length ? (
+                <ol className="flex flex-col">
+                  {upcoming.map((u, i) => (
+                    <li key={`${u.item.key}-${u.date}`}>
+                      {i === 0 || upcoming[i - 1].date !== u.date ? (
+                        <div className="flex items-baseline justify-between gap-3 border-y bg-muted/50 px-5 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
+                          <span>
+                            {daysBetween(d.today, u.date) < 2
+                              ? relativeDay(u.date, d.today)
+                              : longDate(u.date)}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex min-h-10 items-center justify-between gap-3 px-5 py-1.5 text-sm">
+                        <span className="truncate">{u.item.merchant}</span>
+                        <Amount
+                          cents={u.item.amountCents}
+                          className="whitespace-nowrap"
+                        />
+                      </div>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="text-sm text-muted-foreground">Nothing due.</p>
+                <p className="px-5 pb-5 text-sm text-muted-foreground">
+                  Nothing expected.
+                </p>
               )}
             </SectionCard>
           </PageGrid>
@@ -144,17 +189,11 @@ function RecurringPage() {
   )
 }
 
-function addDaysIso(date: string, days: number) {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000)
-    .toISOString()
-    .slice(0, 10)
-}
-
 const STATUS: Record<Recurring["status"], string> = {
   active: "Active",
   inactive: "Stopped",
   cancelled: "Cancelled",
-  ignored: "Ignored",
+  ignored: "Not recurring",
 }
 
 function RecurringList({
@@ -187,8 +226,16 @@ function RecurringRow({ item: i, today }: { item: Recurring; today: string }) {
   const patch = useSend<Record<string, unknown>>(
     "PATCH",
     `/api/recurring/${encodeURIComponent(i.key)}`,
-    { success: "Updated" }
+    {
+      success: "Updated",
+    }
   )
+  const source =
+    i.cadenceSource === "provider"
+      ? " (from your bank)"
+      : i.cadenceSource === "manual"
+        ? " (set by you)"
+        : ""
   return (
     <li className="flex items-center gap-3 px-5 py-2">
       <MerchantMark name={i.merchant} />
@@ -200,23 +247,18 @@ function RecurringRow({ item: i, today }: { item: Recurring; today: string }) {
         <span className="truncate text-sm font-medium">{i.merchant}</span>
         <span className="truncate text-xs text-muted-foreground">
           {CADENCE[i.cadence] ?? i.cadence}
-          {i.cadenceSource === "provider"
-            ? " (from your bank)"
-            : i.cadenceSource === "manual"
-              ? " (set by you)"
-              : ""}
-          {" · "}
+          {source} ·{" "}
           {i.status === "active"
-            ? `next ${relativeDay(i.nextDate, today).toLowerCase()}`
+            ? relativeDay(i.nextDate, today)
             : `${STATUS[i.status]}, last ${shortDate(i.lastDate, today)}`}
         </span>
       </Link>
-      <span className="hidden text-xs text-muted-foreground sm:block">
+      <span className="hidden max-w-32 truncate text-xs text-muted-foreground sm:block">
         {i.accountName}
       </span>
       <Amount
         cents={i.amountCents}
-        className="w-20 text-right text-sm font-medium"
+        className="w-24 text-right text-sm font-medium whitespace-nowrap"
       />
       <DropdownMenu>
         <DropdownMenuTrigger

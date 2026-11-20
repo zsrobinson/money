@@ -73,7 +73,7 @@ function Merchants() {
           />
         </PageActions>
       </PageHeader>
-      <ReportNav />
+      <ReportNav range={range} />
       {q.isError ? (
         <QueryError
           title="Merchants failed to load"
@@ -124,7 +124,7 @@ function Merchants() {
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.key}>
-                  <TableCell className="pl-5">
+                  <TableCell className="w-full max-w-0 pl-5">
                     <Link
                       to="/reports/merchants/$key"
                       params={{ key: r.key }}

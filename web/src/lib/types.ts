@@ -9,6 +9,7 @@ export type Source = {
   lastSuccessAt: string | null
   dataKinds: string[]
   accounts: number
+  syncRequestedAt: string | null
 }
 export type Settings = {
   defaultRange: Range
@@ -125,6 +126,7 @@ export type TxnDetail = Txn & {
   website: string | null
   merchantKey: string
   original: {
+    date: string
     category: string
     merchant: string | null
     detailedCategory: string | null
@@ -134,6 +136,7 @@ export type TxnDetail = Txn & {
     merchant: boolean
     hidden: boolean
     reviewed: boolean
+    date: boolean
   }
   splits: Split[]
   rules: { id: string; match: RuleMatch; action: RuleAction }[]
@@ -146,6 +149,7 @@ export type TxnPage = {
   outflowCents: number
   offset: number
   items: Txn[]
+  dayTotals: Record<string, number>
 }
 export type NetPoint = {
   date: string

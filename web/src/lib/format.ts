@@ -51,11 +51,6 @@ const MONTH_YEAR = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   timeZone: "UTC",
 })
-const MONTH_SHORT_YEAR = new Intl.DateTimeFormat(undefined, {
-  month: "short",
-  year: "2-digit",
-  timeZone: "UTC",
-})
 const WEEKDAY = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
   month: "long",
@@ -65,7 +60,8 @@ const WEEKDAY = new Intl.DateTimeFormat(undefined, {
 })
 
 export const parseDay = (date: string) => new Date(`${date}T00:00:00Z`)
-export const epoch = (date: string) => parseDay(date).getTime() / 1000
+/** Chart time in epoch milliseconds, the shell's convention. */
+export const epoch = (date: string) => parseDay(date).getTime()
 export function shortDate(date: string, today?: string) {
   const d = parseDay(date)
   return today && date.slice(0, 4) !== today.slice(0, 4)
@@ -78,17 +74,38 @@ export const monthName = (month: string) =>
   MONTH_YEAR.format(parseDay(`${month}-01`))
 export const monthShort = (month: string) =>
   MONTH.format(parseDay(`${month}-01`))
+const shortYear = (d: Date) =>
+  `${MONTH.format(d)} ’${String(d.getUTCFullYear()).slice(2)}`
+/** "Jan ’26". */
 export const monthShortYear = (month: string) =>
-  MONTH_SHORT_YEAR.format(parseDay(`${month}-01`))
+  shortYear(parseDay(`${month}-01`))
 export const monthEpoch = (month: string) => epoch(`${month}-01`)
-export const epochMonth = (seconds: number) =>
-  MONTH.format(new Date(seconds * 1000))
-export const epochMonthYear = (seconds: number) =>
-  MONTH_SHORT_YEAR.format(new Date(seconds * 1000))
-export const epochDate = (seconds: number) =>
-  DATE.format(new Date(seconds * 1000))
-export const epochFullDate = (seconds: number) =>
-  DATE_YEAR.format(new Date(seconds * 1000))
+export const epochMonth = (ms: number) => MONTH.format(new Date(ms))
+export const epochMonthYear = (ms: number) => shortYear(new Date(ms))
+export const epochDate = (ms: number) => DATE.format(new Date(ms))
+export const epochFullDate = (ms: number) => DATE_YEAR.format(new Date(ms))
+export const epochMonthName = (ms: number) => MONTH_YEAR.format(new Date(ms))
+
+const trimNumber = (n: number) =>
+  n >= 100 ? String(Math.round(n)) : String(Math.round(n * 10) / 10)
+/** Round axis money from chart dollars: $105k, $1.5k, $450. */
+export function moneyTick(dollars: number) {
+  const abs = Math.abs(dollars)
+  const sign = dollars < 0 ? "−" : ""
+  if (abs >= 1_000_000) return `${sign}$${trimNumber(abs / 1_000_000)}M`
+  if (abs >= 1000) return `${sign}$${trimNumber(abs / 1000)}k`
+  return `${sign}$${Math.round(abs)}`
+}
+
+/** Time-axis ticks: days for a short span, months otherwise, with years when the span crosses one. */
+export function timeTick(points: { time: number }[]) {
+  const first = points[0]?.time ?? 0
+  const last = points.at(-1)?.time ?? 0
+  if ((last - first) / 86_400_000 <= 120) return epochDate
+  return new Date(first).getUTCFullYear() !== new Date(last).getUTCFullYear()
+    ? epochMonthYear
+    : epochMonth
+}
 
 export function addMonths(month: string, n: number) {
   const d = parseDay(`${month}-01`)
@@ -150,3 +167,13 @@ const ASSET: Record<string, string> = {
 }
 export const assetType = (type: string) =>
   ASSET[type.toLowerCase()] ?? titleCase(type)
+
+const CADENCE_DAYS: Record<string, number> = {
+  weekly: 7,
+  biweekly: 14,
+  semimonthly: 15,
+  monthly: 30,
+  quarterly: 91,
+  yearly: 365,
+}
+export const cadenceDays = (cadence: string) => CADENCE_DAYS[cadence] ?? 30

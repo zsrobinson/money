@@ -31,11 +31,13 @@ import {
   EllipsisIcon,
 } from "lucide-react"
 import { z } from "zod"
+import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
 import { Loading, Meter, SectionCard, Stat, StatRow } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
 import {
   addMonths,
-  epochMonth,
+  epochMonthYear,
+  moneyTick,
   money,
   monthEpoch,
   monthName,
@@ -72,6 +74,7 @@ function Budgets() {
       }>("/api/budgets/history?months=12", signal),
   })
   const d = q.data
+  const mobile = useIsMobile()
   const month = d?.month ?? s.month
   const copy = useSend<void, { copied: number }>(
     "POST",
@@ -192,6 +195,13 @@ function Budgets() {
                 Amounts change this month only; use the menu to set a default.
               </span>
             </div>
+            <div className="hidden grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_7.5rem_2rem] gap-x-3 border-b px-5 py-1.5 text-xs text-muted-foreground sm:grid">
+              <span>Category</span>
+              <span>Progress</span>
+              <span className="text-right">Spent</span>
+              <span className="text-right">Budget</span>
+              <span />
+            </div>
             {budgeted.length ? (
               <ul className="flex flex-col divide-y divide-border/70">
                 {budgeted.map((r) => (
@@ -231,7 +241,7 @@ function Budgets() {
               <TrendChart
                 kind="bar"
                 label="Total budget and spending in budgeted categories by month"
-                data={history.data.months.map((m) => ({
+                data={history.data.months.slice(mobile ? -6 : 0).map((m) => ({
                   time: monthEpoch(m.month),
                   budget: m.budgetCents / 100,
                   spent: m.spentCents / 100,
@@ -241,7 +251,8 @@ function Budgets() {
                   spent: { label: "Spent", color: "var(--chart-1)" },
                 }}
                 format={whole}
-                formatTime={epochMonth}
+                formatTick={moneyTick}
+                formatTime={epochMonthYear}
                 className="h-56"
               />
             </SectionCard>
@@ -262,7 +273,9 @@ function BudgetLine({
   elapsed: number
 }) {
   const [value, setValue] = useState(
-    r.budgetCents == null ? "" : String(Math.round(r.budgetCents / 100))
+    r.budgetCents == null
+      ? ""
+      : Math.round(r.budgetCents / 100).toLocaleString()
   )
   const put = useSend<{ amountCents: number | null; asDefault?: boolean }>(
     "PUT",
@@ -301,7 +314,7 @@ function BudgetLine({
     put.mutate({ amountCents: cents })
   }
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_7.5rem_auto] items-center gap-x-3 gap-y-1.5 px-5 py-2.5 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_7.5rem_auto]">
+    <li className="grid grid-cols-[minmax(0,1fr)_7.5rem_auto] items-center gap-x-3 gap-y-1.5 px-5 py-2.5 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_7.5rem_2rem]">
       <Link
         to="/reports/categories/$code"
         params={{ code: r.code }}
@@ -310,11 +323,13 @@ function BudgetLine({
         {r.label}
       </Link>
       <div className="col-span-3 row-start-2 flex flex-col gap-1 sm:col-span-1 sm:row-start-auto">
-        <Meter
-          label={`${r.label} budget used`}
-          value={ratio}
-          tone={over ? "over" : "default"}
-        />
+        {r.budgetCents != null ? (
+          <Meter
+            label={`${r.label} budget used`}
+            value={ratio}
+            tone={over ? "over" : "default"}
+          />
+        ) : null}
         <span className="text-xs text-muted-foreground">
           {r.budgetCents == null ? (
             `${money(r.averageCents, { whole: true })} average`

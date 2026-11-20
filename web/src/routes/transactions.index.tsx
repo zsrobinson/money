@@ -11,6 +11,7 @@ import {
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { Card } from "@zsrobinson/shell/ui/card"
+import { Checkbox } from "@zsrobinson/shell/ui/checkbox"
 import { Input } from "@zsrobinson/shell/ui/input"
 import {
   InputGroup,
@@ -18,25 +19,23 @@ import {
   InputGroupInput,
 } from "@zsrobinson/shell/ui/input-group"
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@zsrobinson/shell/ui/native-select"
-import {
-  DownloadIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  DownloadIcon,
   EyeOffIcon,
+  ListChecksIcon,
   SearchIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react"
 import { z } from "zod"
 import { EmptyState, Loading } from "@/components/money"
-import { CategorySelect, TxnRows } from "@/components/transactions"
+import { Choice, DatePicker } from "@/components/pickers"
+import { CategorySelect, ReviewDot, TxnRows } from "@/components/transactions"
+import { query } from "@/lib/api"
 import { usePageTitle } from "@/lib/crumb"
 import { money, pluralize } from "@/lib/format"
-import { query } from "@/lib/api"
 import { useSend } from "@/lib/mutations"
 import {
   accountsQuery,
@@ -89,6 +88,13 @@ const STATUS_LABEL: Record<(typeof STATUS)[number], string> = {
   hidden: "Hidden",
   all: "Everything",
 }
+const SORTS = [
+  { value: "date-desc", label: "Newest first" },
+  { value: "date-asc", label: "Oldest first" },
+  { value: "amount-desc", label: "Largest first" },
+  { value: "amount-asc", label: "Smallest first" },
+  { value: "merchant-asc", label: "Merchant A–Z" },
+]
 
 function Transactions() {
   usePageTitle("Transactions")
@@ -146,6 +152,7 @@ function Transactions() {
   const accounts = useQuery(accountsQuery)
   const categories = useQuery(categoriesQuery)
   const tags = useQuery(tagsQuery)
+  const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const toggle = (id: string, on: boolean) =>
     setSelected((prev) => {
@@ -154,6 +161,10 @@ function Transactions() {
       else next.delete(id)
       return next
     })
+  const stopSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
   const bulk = useSend<
     { ids: string[]; patch: Record<string, unknown>; addTag?: string },
     { updated: number }
@@ -168,6 +179,7 @@ function Transactions() {
   )
   const total = list.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE))
+  const byDate = (s.sort ?? "date") === "date"
   return (
     <Page>
       <PageHeader>
@@ -187,6 +199,7 @@ function Transactions() {
           <Button
             variant={s.status === "unreviewed" ? "secondary" : "outline"}
             size="sm"
+            aria-pressed={s.status === "unreviewed"}
             onClick={() =>
               set({
                 status: s.status === "unreviewed" ? undefined : "unreviewed",
@@ -212,27 +225,22 @@ function Transactions() {
           </InputGroup>
           <CategorySelect
             aria-label="Category"
-            className="min-w-0 flex-1 sm:w-auto sm:flex-none"
+            className="min-w-0 flex-1 sm:w-44 sm:flex-none"
             categories={categories.data ?? []}
             value={s.category ?? ""}
             placeholder="All categories"
             onChange={(v) => set({ category: v || undefined })}
           />
-          <NativeSelect
+          <Choice
             aria-label="Account"
-            className="min-w-0 flex-1 sm:flex-none"
+            className="min-w-0 flex-1 sm:w-44 sm:flex-none"
             value={s.account ?? ""}
-            onChange={(e) => set({ account: e.target.value || undefined })}
-          >
-            <NativeSelectOption value="">All accounts</NativeSelectOption>
-            {(accounts.data ?? [])
+            placeholder="All accounts"
+            onChange={(v) => set({ account: v || undefined })}
+            options={(accounts.data ?? [])
               .filter((a) => !a.hidden || a.id === s.account)
-              .map((a) => (
-                <NativeSelectOption key={a.id} value={a.id}>
-                  {a.name}
-                </NativeSelectOption>
-              ))}
-          </NativeSelect>
+              .map((a) => ({ value: a.id, label: a.name }))}
+          />
           <Button
             variant={filtersOpen ? "secondary" : "outline"}
             aria-expanded={filtersOpen}
@@ -244,88 +252,76 @@ function Transactions() {
         </div>
         {filtersOpen ? (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <NativeSelect
+            <Choice
               aria-label="Status"
+              className="sm:w-40"
               value={s.status ?? "visible"}
-              onChange={(e) =>
+              onChange={(v) =>
                 set({
                   status:
-                    e.target.value === "visible"
-                      ? undefined
-                      : (e.target.value as TxnSearch["status"]),
+                    v === "visible" ? undefined : (v as TxnSearch["status"]),
                 })
               }
-            >
-              {STATUS.map((x) => (
-                <NativeSelectOption key={x} value={x}>
-                  {STATUS_LABEL[x]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            <NativeSelect
+              options={STATUS.map((x) => ({
+                value: x,
+                label: STATUS_LABEL[x],
+              }))}
+            />
+            <Choice
               aria-label="Direction"
+              className="sm:w-40"
               value={s.direction ?? ""}
-              onChange={(e) =>
-                set({
-                  direction: (e.target.value ||
-                    undefined) as TxnSearch["direction"],
-                })
+              placeholder="Money in and out"
+              onChange={(v) =>
+                set({ direction: (v || undefined) as TxnSearch["direction"] })
               }
-            >
-              <NativeSelectOption value="">Money in and out</NativeSelectOption>
-              <NativeSelectOption value="out">Money out</NativeSelectOption>
-              <NativeSelectOption value="in">Money in</NativeSelectOption>
-            </NativeSelect>
-            <NativeSelect
+              options={[
+                { value: "out", label: "Money out" },
+                { value: "in", label: "Money in" },
+              ]}
+            />
+            <Choice
               aria-label="Kind"
+              className="sm:w-52"
               value={s.flow ?? ""}
-              onChange={(e) =>
-                set({
-                  flow: (e.target.value || undefined) as TxnSearch["flow"],
-                })
+              placeholder="Any kind"
+              onChange={(v) =>
+                set({ flow: (v || undefined) as TxnSearch["flow"] })
               }
-            >
-              <NativeSelectOption value="">Any kind</NativeSelectOption>
-              <NativeSelectOption value="activity">
-                Purchases and income
-              </NativeSelectOption>
-              <NativeSelectOption value="bank_transfer">
-                Transfers and card payments
-              </NativeSelectOption>
-              <NativeSelectOption value="peer_payment">
-                Peer payments
-              </NativeSelectOption>
-            </NativeSelect>
-            <NativeSelect
+              options={[
+                { value: "activity", label: "Purchases and income" },
+                {
+                  value: "bank_transfer",
+                  label: "Transfers and card payments",
+                },
+                { value: "peer_payment", label: "Peer payments" },
+              ]}
+            />
+            <Choice
               aria-label="Tag"
+              className="sm:w-40"
               value={s.tag ?? ""}
-              onChange={(e) => set({ tag: e.target.value || undefined })}
-            >
-              <NativeSelectOption value="">Any tag</NativeSelectOption>
-              {(tags.data ?? []).map((t) => (
-                <NativeSelectOption key={t.id} value={t.id}>
-                  {t.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              From
-              <Input
-                type="date"
-                className="w-auto"
-                value={s.from ?? ""}
-                onChange={(e) => set({ from: e.target.value || undefined })}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              To
-              <Input
-                type="date"
-                className="w-auto"
-                value={s.to ?? ""}
-                onChange={(e) => set({ to: e.target.value || undefined })}
-              />
-            </label>
+              placeholder="Any tag"
+              onChange={(v) => set({ tag: v || undefined })}
+              options={(tags.data ?? []).map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+            <DatePicker
+              aria-label="From date"
+              placeholder="From"
+              className="sm:w-44"
+              value={s.from ?? ""}
+              onChange={(v) => set({ from: v || undefined })}
+            />
+            <DatePicker
+              aria-label="To date"
+              placeholder="To"
+              className="sm:w-44"
+              value={s.to ?? ""}
+              onChange={(v) => set({ to: v || undefined })}
+            />
             <Input
               aria-label="Minimum amount"
               inputMode="decimal"
@@ -370,6 +366,9 @@ function Transactions() {
             <span className="tabular-nums">
               {money(-list.data.outflowCents, { whole: true })} out
             </span>
+            <span className="flex items-center gap-1.5">
+              <ReviewDot /> needs review
+            </span>
           </>
         ) : null}
         {active.length || s.q ? (
@@ -395,88 +394,116 @@ function Transactions() {
         />
       ) : null}
       <Card className="gap-0 py-0">
-        <div className="flex min-h-11 items-center gap-2 border-b px-4 py-1.5 text-sm sm:px-5">
-          <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
-            <input
-              type="checkbox"
-              className="size-4 cursor-pointer accent-(--primary)"
-              checked={allSelected}
-              onChange={(e) =>
-                setSelected(
-                  e.target.checked ? new Set(items.map((t) => t.id)) : new Set()
-                )
-              }
-              aria-label="Select all on this page"
-            />
-            {selected.size ? `${selected.size} selected` : "Select"}
-          </label>
-          {selected.size ? (
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-              <CategorySelect
-                aria-label="Set category for selected"
-                className="w-40"
-                categories={categories.data ?? []}
-                value=""
-                placeholder="Set category"
-                disabled={bulk.isPending}
-                onChange={(v) =>
-                  v &&
-                  bulk.mutate({ ids: [...selected], patch: { category: v } })
-                }
-              />
-              {tags.data?.length ? (
-                <NativeSelect
-                  aria-label="Add tag to selected"
-                  value=""
-                  disabled={bulk.isPending}
-                  onChange={(e) =>
-                    e.target.value &&
-                    bulk.mutate({
-                      ids: [...selected],
-                      patch: {},
-                      addTag: e.target.value,
-                    })
+        <div className="flex min-h-11 flex-wrap items-center gap-2 border-b px-4 py-1.5 text-sm sm:px-5">
+          {selecting ? (
+            <>
+              <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(on) =>
+                    setSelected(
+                      on ? new Set(items.map((t) => t.id)) : new Set()
+                    )
                   }
-                >
-                  <NativeSelectOption value="">Add tag</NativeSelectOption>
-                  {tags.data.map((t) => (
-                    <NativeSelectOption key={t.id} value={t.id}>
-                      {t.name}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              ) : null}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={bulk.isPending}
-                onClick={() =>
-                  bulk.mutate({ ids: [...selected], patch: { reviewed: true } })
-                }
-              >
-                <CheckIcon data-icon="inline-start" />
-                Mark reviewed
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={bulk.isPending}
-                onClick={() =>
-                  bulk.mutate({ ids: [...selected], patch: { hidden: true } })
-                }
-              >
-                <EyeOffIcon data-icon="inline-start" />
-                Hide
-              </Button>
-            </div>
+                  aria-label="Select all on this page"
+                />
+                {selected.size ? `${selected.size} selected` : "Select all"}
+              </label>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                {selected.size ? (
+                  <>
+                    <CategorySelect
+                      aria-label="Set category for selected"
+                      size="sm"
+                      className="w-40"
+                      categories={categories.data ?? []}
+                      value=""
+                      placeholder="Set category"
+                      disabled={bulk.isPending}
+                      onChange={(v) =>
+                        v &&
+                        bulk.mutate({
+                          ids: [...selected],
+                          patch: { category: v },
+                        })
+                      }
+                    />
+                    {tags.data?.length ? (
+                      <Choice
+                        aria-label="Add tag to selected"
+                        size="sm"
+                        className="w-32"
+                        value=""
+                        placeholder="Add tag"
+                        disabled={bulk.isPending}
+                        onChange={(v) =>
+                          v &&
+                          bulk.mutate({
+                            ids: [...selected],
+                            patch: {},
+                            addTag: v,
+                          })
+                        }
+                        options={tags.data.map((t) => ({
+                          value: t.id,
+                          label: t.name,
+                        }))}
+                      />
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={bulk.isPending}
+                      onClick={() =>
+                        bulk.mutate({
+                          ids: [...selected],
+                          patch: { reviewed: true },
+                        })
+                      }
+                    >
+                      <CheckIcon data-icon="inline-start" />
+                      Mark reviewed
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={bulk.isPending}
+                      onClick={() =>
+                        bulk.mutate({
+                          ids: [...selected],
+                          patch: { hidden: true },
+                        })
+                      }
+                    >
+                      <EyeOffIcon data-icon="inline-start" />
+                      Hide
+                    </Button>
+                  </>
+                ) : null}
+                <Button size="sm" variant="ghost" onClick={stopSelecting}>
+                  Done
+                </Button>
+              </div>
+            </>
           ) : (
-            <div className="ml-auto flex items-center gap-1.5">
-              <NativeSelect
+            <>
+              <Button
                 size="sm"
+                variant="ghost"
+                className="-ml-2"
+                onClick={() => setSelecting(true)}
+              >
+                <ListChecksIcon data-icon="inline-start" />
+                Select
+              </Button>
+              <Choice
                 aria-label="Sort"
+                size="sm"
+                align="end"
+                className="ml-auto w-40"
                 value={`${s.sort ?? "date"}-${s.order ?? "desc"}`}
-                onChange={(e) => {
-                  const [sort, order] = e.target.value.split("-") as [
+                onChange={(v) => {
+                  const [sort, order] = v.split("-") as [
                     TxnSearch["sort"],
                     TxnSearch["order"],
                   ]
@@ -485,30 +512,21 @@ function Transactions() {
                     order: order === "desc" ? undefined : order,
                   })
                 }}
-              >
-                <NativeSelectOption value="date-desc">
-                  Newest first
-                </NativeSelectOption>
-                <NativeSelectOption value="date-asc">
-                  Oldest first
-                </NativeSelectOption>
-                <NativeSelectOption value="amount-desc">
-                  Largest first
-                </NativeSelectOption>
-                <NativeSelectOption value="amount-asc">
-                  Smallest first
-                </NativeSelectOption>
-                <NativeSelectOption value="merchant-asc">
-                  Merchant A–Z
-                </NativeSelectOption>
-              </NativeSelect>
-            </div>
+                options={SORTS}
+              />
+            </>
           )}
         </div>
         {!list.data ? (
           <Loading rows={10} className="p-4" />
         ) : items.length ? (
-          <TxnRows items={items} selected={selected} onToggle={toggle} />
+          <TxnRows
+            items={items}
+            grouped={byDate}
+            dayTotals={list.data.dayTotals}
+            selected={selected}
+            onToggle={selecting ? toggle : undefined}
+          />
         ) : (
           <EmptyState title="No transactions match">
             Change the search or clear filters to see more.

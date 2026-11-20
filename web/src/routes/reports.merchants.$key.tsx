@@ -20,16 +20,18 @@ import {
   SectionCard,
   Stat,
   StatRow,
+  CardLink,
 } from "@/components/money"
 import { TxnRows } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
   CADENCE,
-  epochMonth,
+  epochMonthYear,
   fullDate,
   money,
   monthEpoch,
   shortDate,
+  moneyTick,
 } from "@/lib/format"
 import { merchantDetailQuery } from "@/lib/queries"
 
@@ -127,7 +129,8 @@ function MerchantDetail() {
                     },
                   }}
                   format={(v) => money(Math.round(v * 100), { whole: true })}
-                  formatTime={epochMonth}
+                  formatTime={epochMonthYear}
+                  formatTick={moneyTick}
                   className="h-48"
                 />
               </SectionCard>
@@ -135,19 +138,16 @@ function MerchantDetail() {
                 title="Transactions"
                 flush
                 action={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    render={
-                      <Link to="/transactions" search={{ merchant: key }} />
-                    }
-                    nativeButton={false}
-                  >
+                  <CardLink to="/transactions" search={{ merchant: key }}>
                     All {d.count}
-                  </Button>
+                  </CardLink>
                 }
               >
-                <TxnRows items={d.transactions.slice(0, 15)} />
+                <TxnRows
+                  items={d.transactions.slice(0, 15)}
+                  primary="account"
+                  grouped
+                />
               </SectionCard>
             </PageStack>
             <SectionCard title="Recurring">

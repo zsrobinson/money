@@ -28,7 +28,14 @@ import {
 } from "@/components/money"
 import { ReportNav } from "@/components/report-nav"
 import { usePageTitle } from "@/lib/crumb"
-import { money, percent, shortDate } from "@/lib/format"
+import {
+  epochMonthYear,
+  money,
+  moneyTick,
+  monthEpoch,
+  percent,
+  shortDate,
+} from "@/lib/format"
 import { categoryReportQuery } from "@/lib/queries"
 import type { Range } from "@/lib/types"
 
@@ -82,7 +89,7 @@ function CategoryReport() {
           />
         </PageActions>
       </PageHeader>
-      <ReportNav />
+      <ReportNav range={range} />
       {q.isError ? (
         <QueryError
           title="The report failed to load"
@@ -128,8 +135,8 @@ function CategoryReport() {
                 kind="bar"
                 stacked
                 label="Monthly spending in the three largest categories"
-                data={d.months.map((_, i) => ({
-                  time: i,
+                data={d.months.map((month, i) => ({
+                  time: monthEpoch(month),
                   ...Object.fromEntries(
                     top
                       .slice(0, 3)
@@ -145,12 +152,8 @@ function CategoryReport() {
                     ])
                 )}
                 format={(v) => money(Math.round(v * 100), { whole: true })}
-                formatTime={(i) =>
-                  new Date(`${d.months[i]}-01T00:00:00Z`).toLocaleString(
-                    undefined,
-                    { month: "short", timeZone: "UTC" }
-                  )
-                }
+                formatTime={epochMonthYear}
+                formatTick={moneyTick}
                 className="h-56"
               />
             </SectionCard>
