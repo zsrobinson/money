@@ -133,14 +133,20 @@ class VenmoSource:
         if not row: return {}
         institution,as_of,error=row
         ref=source_ref(db,self.key); account=virtual_account(db,self.key,institution,'statement wallet')
-        sql="""SELECT date,?,?,CASE category WHEN 'peer_sent' THEN 'peer_payment' WHEN 'peer_received' THEN 'peer_payment' WHEN 'bank_transfer' THEN 'bank_transfer' WHEN 'fee' THEN 'fees' ELSE 'shopping' END,
-          CASE category WHEN 'fee' THEN 'general_fees' WHEN 'purchase' THEN 'general_shopping' ELSE category END,'USD',0,
-          SUM(CASE WHEN category IN ('purchase','fee') THEN CASE direction WHEN 'in' THEN -cents/100.0 ELSE cents/100.0 END ELSE 0 END),
+        normalized="""SELECT date,cents,direction,
+            CASE category WHEN 'peer_sent' THEN 'peer_payment' WHEN 'peer_received' THEN 'peer_payment' WHEN 'bank_transfer' THEN 'bank_transfer' WHEN 'fee' THEN 'fees' ELSE 'shopping' END AS category,
+            CASE category WHEN 'fee' THEN 'general_fees' WHEN 'purchase' THEN 'general_shopping' ELSE category END AS detailed_category FROM venmo_rows"""
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='reporting_venmo'").fetchone():normalized='SELECT * FROM reporting_venmo'
+        sql="""WITH normalized AS ("""+normalized+""") SELECT date,?,?,category,detailed_category,'USD',
+          SUM(CASE WHEN category='income' THEN CASE direction WHEN 'in' THEN cents/100.0 ELSE -cents/100.0 END ELSE 0 END),
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') THEN CASE direction WHEN 'in' THEN -cents/100.0 ELSE cents/100.0 END ELSE 0 END),
           SUM(CASE WHEN category='bank_transfer' AND direction='in' THEN cents/100.0 ELSE 0 END),
           SUM(CASE WHEN category='bank_transfer' AND direction='out' THEN cents/100.0 ELSE 0 END),
-          SUM(CASE WHEN category='peer_received' THEN cents/100.0 ELSE 0 END),
-          SUM(CASE WHEN category='peer_sent' THEN cents/100.0 ELSE 0 END),COUNT(*)
-          FROM venmo_rows GROUP BY date,category,direction"""
+          SUM(CASE WHEN category='peer_payment' AND direction='in' THEN cents/100.0 ELSE 0 END),
+          SUM(CASE WHEN category='peer_payment' AND direction='out' THEN cents/100.0 ELSE 0 END),COUNT(*),0,0,
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') AND direction='in' THEN cents/100.0 ELSE 0 END),
+          SUM(CASE WHEN category='income' THEN CASE direction WHEN 'in' THEN cents/100.0 ELSE -cents/100.0 END ELSE 0 END),0,0
+          FROM normalized GROUP BY date,category,detailed_category,direction"""
         return {'sources':[(ref,institution,'file_import',as_of,status(error,as_of),json.dumps(['spending']))],
           'accounts':[(account,ref,'Statement wallet '+account[-6:],institution,'other','wallet','USD',None,None,None,'',json.dumps(['spending']),'available')],
           'daily':db.execute(sql,(account,ref)).fetchall(),'holdings':[]}

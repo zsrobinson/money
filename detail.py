@@ -41,6 +41,15 @@ def cents(value):
     return None if value is None else int((Decimal(str(value))*100).quantize(Decimal(1),rounding=ROUND_HALF_EVEN))
 
 
+def wallet_rows(db):
+    """Stable IDs preserve duplicate multiplicity without retaining import IDs."""
+    from collections import Counter
+    counts=Counter()
+    for day,amount,direction,cat in db.execute('SELECT date,cents,direction,category FROM venmo_rows ORDER BY date,cents,direction,category,rowid'):
+        key=(day,amount,direction,cat);ordinal=counts[key];counts[key]+=1
+        yield opaque('txn','csv',day,amount,direction,cat,ordinal),day,amount,direction,cat
+
+
 def ingest_accounts(db, accounts):
     db.executemany('INSERT OR REPLACE INTO web_accounts VALUES(?,?,?)',
                    [(a['account_id'], a.get('name'), a.get('official_name')) for a in accounts])
@@ -139,12 +148,9 @@ def publish(db, path):
         # duplicate genuine rows without exposing filenames or import metadata.
         wallet=out.execute("SELECT a.id FROM accounts a JOIN sources s ON s.id=a.source_id WHERE a.subtype='wallet' AND s.id=?",(source_ref(db,'venmo-csv'),)).fetchone() if db.execute("SELECT 1 FROM items WHERE id='venmo-csv'").fetchone() else None
         if wallet:
-            from collections import Counter
-            ordinals=Counter()
-            for day,amount,direction,cat in db.execute('SELECT date,cents,direction,category FROM venmo_rows ORDER BY date,cents,direction,category,rowid'):
-                key=(day,amount,direction,cat);ordinal=ordinals[key];ordinals[key]+=1
+            for tid,day,amount,direction,cat in wallet_rows(db):
                 group='peer_payment' if cat.startswith('peer_') else 'bank_transfer' if cat=='bank_transfer' else 'fees' if cat=='fee' else 'shopping'
-                out.execute('INSERT INTO transactions(id,account_id,date,amount_cents,currency,description,category,detailed_category,flow_kind,pending) VALUES(?,?,?,?,?,?,?,?,?,0)',(opaque('txn','csv',day,amount,direction,cat,ordinal),wallet[0],day,amount if direction=='in' else -amount,'USD','Venmo payment received' if direction=='in' else 'Venmo payment sent',group,cat,group if group in ('peer_payment','bank_transfer') else 'activity'))
+                out.execute('INSERT INTO transactions(id,account_id,date,amount_cents,currency,description,category,detailed_category,flow_kind,pending) VALUES(?,?,?,?,?,?,?,?,?,0)',(tid,wallet[0],day,amount if direction=='in' else -amount,'USD','Venmo payment received' if direction=='in' else 'Venmo payment sent',group,cat,group if group in ('peer_payment','bank_transfer') else 'activity'))
         for row in db.execute('SELECT * FROM web_balance_history'):
             if out.execute('SELECT 1 FROM accounts WHERE id=?',(row[0],)).fetchone():out.execute('INSERT INTO balance_history VALUES(?,?,?,?)',row)
         for aid,ticker,name,kind,currency,quantity,value,basis in db.execute('SELECT m.ref,h.ticker,h.name,h.type,h.currency,h.quantity,h.value,h.cost_basis FROM holdings h JOIN account_alias m ON m.provider_ref=h.account AND m.item=h.item'):

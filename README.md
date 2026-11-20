@@ -295,7 +295,7 @@ never mounted in or readable by the aggregate MCP process. Sync retains the
 explicit web fields in `web_accounts` and `web_transactions`; it still projects
 only the original aggregate schemas for MCP. Peer-payment names and notes remain
 discarded. The web app owns its separate overrides database, and sync reads its
-versioned category/hidden/split edits when building aggregate reporting. Display
+versioned category/date/hidden/split edits when building aggregate reporting. Display
 merchant edits, notes, tags and custom category labels never enter MCP responses.
 
 Set `MONEY_DETAIL_DB` in the sync environment to opt into detail publication, and

@@ -131,3 +131,10 @@ allocate the original signed amount without multiplying merchant purchase counts
 Custom category labels map to owned parent codes for aggregate reporting. Account
 net-worth exclusions affect net worth only, retaining balances and cash flow.
 Generated MCP labels never use app display names, notes or arbitrary edits.
+
+
+Transaction date edits change reporting period buckets, including merchant
+windows, but never overwrite bank posting dates or the evidence used to match
+internal transfers. Imported wallet rows use the same stable opaque identifiers
+and reporting evaluator, including custom categories, splits and hidden flags.
+Schema v3 adds optional date edits; v2 remains readable during rolling upgrades.

@@ -5,7 +5,7 @@ import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import date
-from detail import opaque, cents
+from detail import opaque, cents, wallet_rows
 from taxonomy import category, CATEGORIES
 
 
@@ -107,6 +107,24 @@ def reporting_store(db, app_path):
                     copy.executemany('INSERT INTO reporting_allocations VALUES(?,?,?)',[(tid,cat,amount) for cat,amount in totals.items()])
                 elif value['category']!=txn['category']:
                     copy.execute('INSERT INTO effective_categories VALUES(?,?)',(tid,owned(value['category'])))
+        copy.execute('CREATE TEMP TABLE reporting_venmo(date TEXT,cents INTEGER,direction TEXT,category TEXT,detailed_category TEXT)')
+        wallet=copy.execute("SELECT ref FROM account_alias WHERE provider_ref='virtual:venmo-csv' AND item='venmo-csv'").fetchone()
+        for ref,day,amount,direction,raw_category in wallet_rows(copy):
+            cat='peer_payment' if raw_category.startswith('peer_') else 'bank_transfer' if raw_category=='bank_transfer' else 'fees' if raw_category=='fee' else 'shopping'
+            signed=amount if direction=='in' else -amount
+            txn={'account_id':wallet[0] if wallet else None,'amount_cents':signed,'category':cat,'merchant':None,'description':'Venmo payment received' if direction=='in' else 'Venmo payment sent'}
+            edit=edits.get(ref);value=evaluate(txn,rules,edit)
+            day=(override_date(edit.get('date')) if edit else None) or day
+            if value['hidden']:continue
+            allocated=splits.get(ref,[])
+            if allocated and (sum(r['amount_cents'] for r in allocated)!=signed or any(r['amount_cents']*signed<0 for r in allocated)):raise ValueError('Invalid transaction split')
+            if not allocated:allocated=[{'amount_cents':signed,'category':value['category']}]
+            totals={}
+            for row in allocated:
+                selected=owned(row['category']);totals[selected]=totals.get(selected,0)+row['amount_cents']
+            for selected,amount in totals.items():
+                detail=raw_category if selected==cat else CATEGORIES[selected][-1]
+                copy.execute('INSERT INTO reporting_venmo VALUES(?,?,?,?,?)',(day,abs(amount),'in' if amount>=0 else 'out',selected,detail))
         register_dates(copy)
         copy.commit()
         yield copy

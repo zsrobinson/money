@@ -152,3 +152,25 @@ def test_date_override_moves_all_reporting_periods_without_mutating_source(snaps
     assert db.execute("SELECT date FROM transactions WHERE id='2'").fetchone()==('2026-11-03',)
     with sqlite3.connect(aggregate) as public:
         assert public.execute("SELECT SUM(total) FROM merchants WHERE window='last_month' AND scope='all'").fetchone()==(180.0,)
+
+
+def test_wallet_edits_dates_splits_and_hidden_use_same_rules(snapshot,tmp_path,monkeypatch):
+    from detail import wallet_rows
+    from store import publish as aggregate_publish
+    from queries import Queries
+    db,aggregate=snapshot
+    db.execute("INSERT INTO items VALUES('venmo-csv','Venmo','2026-11-10T12:00:00+00:00',NULL)")
+    db.executemany('INSERT INTO venmo_rows VALUES(?,?,?,?)',[('2026-11-05',1000,'out','purchase'),('2026-11-06',2000,'out','purchase')])
+    rows=list(wallet_rows(db));app=tmp_path/'app.sqlite'
+    with sqlite3.connect(app) as edits:
+        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(3);CREATE TABLE account_overrides(account_id TEXT,exclude_net_worth INTEGER);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER,date TEXT);')
+        edits.execute('INSERT INTO txn_overrides VALUES(?,?,?,?,?,?)',(rows[0][0],'food',None,None,None,'2026-10-31'))
+        edits.execute('INSERT INTO txn_overrides VALUES(?,?,?,?,?,?)',(rows[1][0],None,None,1,None,None))
+        edits.executemany('INSERT INTO txn_splits VALUES(?,?,?,?)',[(rows[0][0],0,-600,'food'),(rows[0][0],1,-400,'fees')])
+    monkeypatch.setenv('MONEY_APP_DB',str(app));aggregate_publish(db,aggregate)
+    q=Queries(aggregate)
+    assert q.cash_flow('category','2026-11-01','2026-12-01')['data']['totals'][0]['spending']==110
+    assert q.cash_flow('category','2026-10-01','2026-11-01')['data']['totals'][0]['spending']==90
+    with sqlite3.connect(aggregate) as public:
+        assert public.execute("SELECT SUM(spending) FROM daily WHERE category='fees' AND day='2026-10-31'").fetchone()==(4.0,)
+    assert list(wallet_rows(db))==rows
