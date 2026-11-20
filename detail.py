@@ -94,6 +94,8 @@ def reconstruct_history(db, today=None):
         earliest=max(earliest,today-timedelta(days=36525))
         balance=cents(current); day=today
         while day>=earliest:
+            observed=db.execute('SELECT current_cents FROM web_balance_history WHERE account_id=? AND date=? AND estimated=0',(account,day.isoformat())).fetchone()
+            if observed:balance=observed[0]
             db.execute('INSERT INTO web_balance_history VALUES(?,?,?,1) ON CONFLICT(account_id,date) DO UPDATE SET current_cents=excluded.current_cents WHERE estimated=1',(account,day.isoformat(),balance))
             balance += changes.get(day.isoformat(),0) * (-1 if kind in ('credit','loan') else 1)
             day -= timedelta(days=1)

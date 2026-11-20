@@ -92,3 +92,23 @@ def test_publication_paths_cannot_share_privileges(tmp_path):
     with pytest.raises(ValueError):validate_paths(tmp_path/'private',tmp_path/'aggregate.sqlite',tmp_path/'detail.sqlite',None)
     with pytest.raises(ValueError):validate_paths(tmp_path/'private',tmp_path/'aggregate.sqlite',tmp_path/'aggregate.sqlite',None)
     validate_paths(tmp_path/'private',tmp_path/'aggregate/aggregate.sqlite',tmp_path/'detail/detail.sqlite',tmp_path/'app/app.sqlite')
+
+
+def test_reconstruction_signs_pending_and_observation_anchors(tmp_path):
+    from store import connect, ingest_accounts
+    db=connect(tmp_path/'fixture.sqlite')
+    try:
+        db.execute("INSERT INTO items VALUES('bank','Example Bank','2026-11-10T12:00:00+00:00',NULL)")
+        ingest_accounts(db,'bank',[{'account_id':key,'name':key,'type':kind,'subtype':subtype,'balances':{'current':balance,'iso_currency_code':'USD'}} for key,kind,subtype,balance in [('cash','depository','checking',1000),('card','credit','credit card',200)]])
+        ingest_transactions(db,'bank',{'added':[{'transaction_id':key,'account_id':account,'date':day,'amount':amount,'pending':pending} for key,account,day,amount,pending in [('cash-today','cash','2026-11-10',50,False),('cash-before','cash','2026-11-09',30,False),('cash-older','cash','2026-11-08',10,False),('cash-pending','cash','2026-11-10',900,True),('card-today','card','2026-11-10',20,False),('card-before','card','2026-11-09',-40,False)]]})
+        refs=dict(db.execute('SELECT provider_ref,ref FROM account_alias'))
+        record_history(db,'2026-11-10');reconstruct_history(db,'2026-11-10')
+        assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-09')).fetchone()==(105000,1)
+        assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['card'],'2026-11-09')).fetchone()==(18000,1)
+        assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-10')).fetchone()==(100000,0)
+        # An actual earlier observation supersedes a reconstruction anchor.
+        db.execute('INSERT OR REPLACE INTO web_balance_history VALUES(?,?,?,0)',(refs['cash'],'2026-11-09',88800))
+        reconstruct_history(db,'2026-11-10')
+        assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-09')).fetchone()==(88800,0)
+        assert db.execute('SELECT current_cents,estimated FROM web_balance_history WHERE account_id=? AND date=?',(refs['cash'],'2026-11-08')).fetchone()==(91800,1)
+    finally:db.close()
