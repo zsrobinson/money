@@ -118,6 +118,7 @@ const TxnPatch = z
     note: z.string().trim().max(2000).nullable().optional(),
     hidden: z.boolean().nullable().optional(),
     reviewed: z.boolean().nullable().optional(),
+    date: z.string().refine(isDate, "Use a valid date").nullable().optional(),
     tags: z.array(z.string().max(100)).max(20).optional(),
   })
   .strict()
@@ -179,6 +180,8 @@ const SETTINGS = z
     reviewNewTransactions: z.boolean(),
     /** Category code to the first month whose leftover carries forward. */
     budgetRollover: z.record(z.string(), z.string().refine(isMonth)),
+    /** Source id to when someone asked for an early sync; the sync unit may honour it. */
+    syncRequests: z.record(z.string(), z.string()),
   })
   .strict()
 type Settings = z.infer<typeof SETTINGS>
@@ -188,6 +191,7 @@ const DEFAULT_SETTINGS: Settings = {
   showPending: true,
   reviewNewTransactions: true,
   budgetRollover: {},
+  syncRequests: {},
 }
 
 /** JSON API mounted under /api on the Access-guarded shell server. */
@@ -247,6 +251,7 @@ export function createApi(model: Model) {
         status: x.status,
         lastSuccessAt: x.lastSuccessAt,
         dataKinds: x.dataKinds,
+        syncRequestedAt: settings().syncRequests[x.id] ?? null,
         accounts: m.accounts.filter((a) => a.sourceId === x.id).length,
       })),
       settings: settings(),
@@ -255,6 +260,20 @@ export function createApi(model: Model) {
     })
   })
 
+  api.post("/sources/:id/sync", (c) => {
+    const m = model.get()
+    const source = m.detail.sources.find((x) => x.id === c.req.param("id"))
+    if (!source) throw notFound("Connection")
+    const next = { ...settings().syncRequests, [source.id]: now() }
+    write(() =>
+      db
+        .prepare(
+          "INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json"
+        )
+        .run("syncRequests", JSON.stringify(next))
+    )
+    return c.json({ requestedAt: next[source.id] }, 202)
+  })
   api.get("/categories", (c) => {
     const m = model.get()
     const counts = new Map<string, number>()
@@ -662,12 +681,24 @@ export function createApi(model: Model) {
     for (const t of list)
       if (t.amountCents > 0) inflow += t.amountCents
       else outflow += t.amountCents
+    const page = list.slice(f.offset, f.offset + f.limit)
     return c.json({
       total: list.length,
       inflowCents: inflow,
       outflowCents: outflow,
       offset: f.offset,
-      items: list.slice(f.offset, f.offset + f.limit).map((t) => txnJson(m, t)),
+      items: page.map((t) => txnJson(m, t)),
+      // Net of every matching transaction on each day shown, across pages.
+      dayTotals: Object.fromEntries(
+        [...new Set(page.map((t) => t.date))].map((date) => [
+          date,
+          list.reduce(
+            (sum, t) =>
+              t.date === date && !t.hidden ? sum + t.amountCents : sum,
+            0
+          ),
+        ])
+      ),
     })
   })
   api.get("/transactions.csv", (c) => {
@@ -742,6 +773,7 @@ export function createApi(model: Model) {
       website: t.website,
       merchantKey: t.merchantKey,
       original: {
+        date: t.snapshot.date,
         category: t.snapshot.category,
         merchant: t.snapshot.merchant,
         detailedCategory: t.detailedCategory,
@@ -783,14 +815,17 @@ export function createApi(model: Model) {
       note: b.note === "" ? null : pick("note", "note"),
       hidden: pick("hidden", "hidden"),
       reviewed: pick("reviewed", "reviewed"),
+      date: b.date === t.snapshot.date ? null : pick("date", "date"),
     }
     if (Object.values(row).every((v) => v == null))
       db.prepare("DELETE FROM txn_overrides WHERE txn_id=?").run(txnId)
     else
       db.prepare(
-        `INSERT INTO txn_overrides VALUES(?,?,?,?,?,?,?) ON CONFLICT(txn_id) DO UPDATE SET
+        `INSERT INTO txn_overrides(txn_id,category,merchant,note,hidden,reviewed,date,updated_at)
+         VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(txn_id) DO UPDATE SET
          category=excluded.category, merchant=excluded.merchant, note=excluded.note,
-         hidden=excluded.hidden, reviewed=excluded.reviewed, updated_at=excluded.updated_at`
+         hidden=excluded.hidden, reviewed=excluded.reviewed, date=excluded.date,
+         updated_at=excluded.updated_at`
       ).run(
         txnId,
         row.category as string | null,
@@ -798,6 +833,7 @@ export function createApi(model: Model) {
         row.note as string | null,
         row.hidden as number | null,
         row.reviewed as number | null,
+        row.date as string | null,
         now()
       )
     if (b.tags) {
@@ -1013,7 +1049,31 @@ export function createApi(model: Model) {
       cents: t.cents,
       count: t.count,
     }))
+    const sources = new Map<
+      string,
+      { key: string; name: string; cents: number; count: number }
+    >()
+    for (const a of m.allocations) {
+      if (
+        a.group !== "income" ||
+        a.txn.pending ||
+        a.txn.date < from ||
+        a.txn.date > to
+      )
+        continue
+      const key = a.txn.merchantKey || "other"
+      const r = sources.get(key) ?? {
+        key,
+        name: a.txn.merchantEff ?? m.category(a.category).label,
+        cents: 0,
+        count: 0,
+      }
+      r.cents += a.amountCents
+      r.count++
+      sources.set(key, r)
+    }
     return c.json({
+      incomeSources: [...sources.values()].sort((a, b) => b.cents - a.cents),
       months: flows,
       selected,
       income: rows
@@ -1114,7 +1174,17 @@ export function createApi(model: Model) {
         .slice(0, 25),
       children: m.categories
         .filter((x) => x.parent === cat.code)
-        .map((x) => ({ code: x.code, label: x.label })),
+        .map((x) => {
+          let cents = 0
+          for (const a of m.allocations)
+            if (
+              a.category === x.code &&
+              !a.txn.pending &&
+              index.has(monthOf(a.txn.date))
+            )
+              cents += sign * a.amountCents
+          return { code: x.code, label: x.label, cents }
+        }),
     })
   })
   api.get("/reports/merchants", (c) => {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { createApi } from "../server/api.ts"
 import { openAppDb } from "../server/app-db.ts"
 import { detailStore } from "../server/detail.ts"
@@ -40,9 +41,36 @@ test("app database is versioned and migrations are idempotent", () => {
         version: number
       }
     ).version,
-    2
+    3
   )
   db.close()
+  // A version 2 database (no date column) upgrades in place and keeps rows.
+  const old = join(dir, "v2.sqlite")
+  const v2 = new DatabaseSync(old)
+  v2.exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(2);
+    CREATE TABLE txn_overrides(txn_id TEXT PRIMARY KEY, category TEXT, merchant TEXT, note TEXT,
+      hidden INTEGER, reviewed INTEGER, updated_at TEXT NOT NULL);
+    INSERT INTO txn_overrides VALUES('txn_a','food',NULL,NULL,NULL,1,'2026-01-01T00:00:00Z');`)
+  v2.close()
+  const upgraded = openAppDb(old)
+  assert.equal(
+    (
+      upgraded.prepare("SELECT version FROM schema_version").get() as {
+        version: number
+      }
+    ).version,
+    3
+  )
+  assert.deepEqual(
+    {
+      ...(upgraded
+        .prepare("SELECT category, reviewed, date FROM txn_overrides")
+        .get() as object),
+    },
+    { category: "food", reviewed: 1, date: null }
+  )
+  upgraded.close()
+  openAppDb(old).close()
 })
 
 test("splits must sum to the amount with the same sign, and drive totals", async () => {
@@ -467,7 +495,97 @@ test("closed accounts stop counting after their last balance", async () => {
     .filter((a) => a.availability === "available" && !a.excludeNetWorth)
     .reduce((s, a) => s + (a.balanceCents ?? 0), 0)
   assert.equal(summary.netWorth.cents, counted)
-  const early = summary.netWorth.series.find((p: { date: string }) => p.date < "2025-03-01")
+  const early = summary.netWorth.series.find(
+    (p: { date: string }) => p.date < "2025-03-01"
+  )
   assert.ok(early)
   await call("PATCH", `/accounts/${old.id}`, { excludeNetWorth: true })
+})
+
+test("a corrected date moves the transaction between months; clearing restores it", async () => {
+  const t = txns().find(
+    (x) =>
+      x.date.startsWith("2026-10") &&
+      x.categoryEff === "shopping" &&
+      !x.splits &&
+      !x.hidden
+  )!
+  const before = (await call("GET", "/cashflow?months=3")).json.months as {
+    month: string
+    spendingCents: number
+  }[]
+  assert.equal(
+    (await call("PATCH", `/transactions/${t.id}`, { date: "2026-13-01" }))
+      .status,
+    422
+  )
+  await call("PATCH", `/transactions/${t.id}`, { date: "2026-11-02" })
+  const moved = model.get().txn.get(t.id)!
+  assert.equal(moved.date, "2026-11-02")
+  assert.equal(moved.snapshot.date, t.snapshot.date)
+  const after = (await call("GET", "/cashflow?months=3")).json.months as {
+    month: string
+    spendingCents: number
+  }[]
+  const delta = (month: string) =>
+    after.find((f) => f.month === month)!.spendingCents -
+    before.find((f) => f.month === month)!.spendingCents
+  assert.equal(delta("2026-11"), -t.amountCents)
+  assert.equal(delta("2026-10"), t.amountCents)
+  const detail = (await call("GET", `/transactions/${t.id}`)).json
+  assert.equal(detail.original.date, t.snapshot.date)
+  assert.equal(detail.overridden.date, true)
+  await call("PATCH", `/transactions/${t.id}`, { date: t.snapshot.date })
+  assert.equal(model.get().txn.get(t.id)!.override.date, false)
+})
+
+test("sync requests are recorded per source and unknown sources 404", async () => {
+  const src = model.get().detail.sources[0]
+  const r = await call("POST", `/sources/${src.id}/sync`)
+  assert.equal(r.status, 202)
+  const meta = (await call("GET", "/meta")).json
+  assert.equal(
+    meta.sources.find((x: { id: string }) => x.id === src.id).syncRequestedAt,
+    r.json.requestedAt
+  )
+  assert.equal((await call("POST", "/sources/src_missing/sync")).status, 404)
+})
+
+test("transaction pages carry day totals across pages", async () => {
+  const page = (await call("GET", "/transactions?limit=5")).json
+  const day = page.items[0].date
+  const all = txns().filter((t) => t.date === day && !t.hidden)
+  assert.equal(
+    page.dayTotals[day],
+    all.reduce((s, t) => s + t.amountCents, 0)
+  )
+})
+
+test("date edits accept only real calendar dates", async () => {
+  const t = txns().find((x) => !x.splits && !x.hidden)!
+  for (const bad of [
+    "2026-02-31",
+    "2026-02-29",
+    "2026-04-31",
+    "2026-13-01",
+    "2026-00-10",
+    "0000-01-01",
+    "2026-1-01",
+    "2026-01-01T00:00",
+  ])
+    assert.equal(
+      (await call("PATCH", `/transactions/${t.id}`, { date: bad })).status,
+      422,
+      bad
+    )
+  for (const good of ["2024-02-29", "0001-01-01", "9999-12-31"]) {
+    assert.equal(
+      (await call("PATCH", `/transactions/${t.id}`, { date: good })).status,
+      200,
+      good
+    )
+    assert.equal(model.get().txn.get(t.id)!.date, good)
+  }
+  await call("PATCH", `/transactions/${t.id}`, { date: null })
+  assert.equal(model.get().txn.get(t.id)!.override.date, false)
 })

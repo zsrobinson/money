@@ -21,10 +21,17 @@ export const monthEnd = (month: string) =>
   addDays(`${addMonths(month, 1)}-01`, -1)
 export const isMonth = (s: unknown): s is string =>
   typeof s === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(s)
-export const isDate = (s: unknown): s is string =>
-  typeof s === "string" &&
-  /^\d{4}-\d{2}-\d{2}$/.test(s) &&
-  !Number.isNaN(fromDate(s))
+/** A real calendar date, year 0001–9999; no rollover such as Feb 31. */
+export const isDate = (s: unknown): s is string => {
+  if (
+    typeof s !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(s) ||
+    s.startsWith("0000")
+  )
+    return false
+  const ms = fromDate(s)
+  return !Number.isNaN(ms) && toDate(ms) === s
+}
 
 export const RANGES = ["1m", "3m", "6m", "ytd", "1y", "all"] as const
 export type Range = (typeof RANGES)[number]

@@ -2,7 +2,7 @@ import { chmodSync, existsSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 
 /** Bump together with docs/overrides.md whenever a table or evaluator rule changes. */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 const V1 = `
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
@@ -68,6 +68,12 @@ export function migrate(db: DatabaseSync) {
         `App database schema ${current} is newer than this app (${SCHEMA_VERSION})`
       )
     if (current < 2) db.exec(V2)
+    // v3: a person can correct a transaction's date.
+    const columns = db.prepare("PRAGMA table_info(txn_overrides)").all() as {
+      name: string
+    }[]
+    if (!columns.some((c) => c.name === "date"))
+      db.exec("ALTER TABLE txn_overrides ADD COLUMN date TEXT")
     if (!row)
       db.prepare("INSERT INTO schema_version VALUES(?)").run(SCHEMA_VERSION)
     else if (current < SCHEMA_VERSION)

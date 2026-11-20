@@ -29,7 +29,7 @@ export type Split = {
   note: string | null
 }
 export type EffTxn = Txn & {
-  snapshot: { category: string; merchant: string | null }
+  snapshot: { category: string; merchant: string | null; date: string }
   categoryEff: string
   merchantEff: string | null
   merchantKey: string
@@ -44,6 +44,7 @@ export type EffTxn = Txn & {
     merchant: boolean
     hidden: boolean
     reviewed: boolean
+    date: boolean
   }
 }
 export type AccountView = Account & {
@@ -203,6 +204,7 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
         txn_id: string
         category: string | null
         merchant: string | null
+        date: string | null
         note: string | null
         hidden: number | null
         reviewed: number | null
@@ -251,7 +253,8 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
       if (!allTags.includes(tag)) allTags.push(tag)
     return {
       ...t,
-      snapshot: { category: t.category, merchant: t.merchant },
+      date: o?.date ?? t.date,
+      snapshot: { category: t.category, merchant: t.merchant, date: t.date },
       categoryEff,
       merchantEff,
       merchantKey: normalizeText(merchantEff ?? t.description ?? ""),
@@ -267,9 +270,15 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
         merchant: o?.merchant != null,
         hidden: o?.hidden != null,
         reviewed: o?.reviewed != null,
+        date: o?.date != null,
       },
     }
   })
+  // A corrected date can move a transaction; keep newest first.
+  if (overrides.size)
+    txns.sort((a, b) =>
+      a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? -1 : 1
+    )
   const allocations: Allocation[] = []
   for (const t of txns) {
     if (t.hidden) continue
