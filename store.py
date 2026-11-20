@@ -129,6 +129,12 @@ def publish(db, path, sources=None):
     from overrides import reporting_store
     from transfers import match_internal
     match_internal(db)
+    # Allocate identities in persistent sync state before the reporting copy.
+    # A newly linked source must have the same opaque identity in both outputs.
+    from sources import source_ref,virtual_account
+    for key,institution in db.execute('SELECT id,institution FROM items').fetchall():
+        source_ref(db,key)
+        virtual_account(db,key,institution,'statement wallet' if key=='venmo-csv' else 'unassigned activity')
     with reporting_store(db,os.environ.get("MONEY_APP_DB")) as effective:
         return _publish(effective,path,sources)
 
