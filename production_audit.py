@@ -60,9 +60,22 @@ def _audit_snapshot(public,private,private_strings,strict_strings,approved_busin
             OR ABS(julianday(a.date)-julianday(b.date))>3''').fetchone()[0]
         if invalid:raise ValueError('Invalid internal transfer match')
         if db.execute("SELECT COUNT(*) FROM daily WHERE category='internal_transfer' AND (income!=0 OR spending!=0 OR transfer_in!=0 OR transfer_out!=0 OR peer_in!=0 OR peer_out!=0)").fetchone()[0]:raise ValueError('Internal transfer entered income or spending')
-        for currency,incoming,outgoing in private.execute('''SELECT t.currency,
-            ROUND(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),2),ROUND(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),2)
-            FROM transactions t JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id GROUP BY t.currency'''):
+        # Apply the same safe reporting allocations before checking internal
+        # totals. A user's explicit reclassification/split is not a pairing bug.
+        private.execute('CREATE TEMP TABLE IF NOT EXISTS effective_categories(id TEXT PRIMARY KEY,category TEXT)')
+        private.execute('CREATE TEMP TABLE IF NOT EXISTS reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
+        disabled=list(filter(None,os.environ.get('PLAIDMCP_DISABLED_SOURCES','').split(',')))
+        exclusion=' AND COALESCE(s.ref,\'\') NOT IN ('+','.join('?' for _ in disabled)+')' if disabled else ''
+        expected_internal=private.execute('''WITH normalized AS (
+            SELECT t.currency,COALESCE(alloc.amount,t.amount) AS amount,
+              COALESCE(alloc.category,ec.category,CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE '' END) AS category
+            FROM transactions t LEFT JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id
+            LEFT JOIN effective_categories ec ON ec.id=t.id LEFT JOIN reporting_allocations alloc ON alloc.id=t.id
+            LEFT JOIN source_identity s ON s.provider_ref=t.item WHERE t.pending=0'''+exclusion+''')
+            SELECT currency,ROUND(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),2),
+            ROUND(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),2)
+            FROM normalized WHERE category='internal_transfer' GROUP BY currency''',disabled).fetchall()
+        for currency,incoming,outgoing in expected_internal:
             actual=db.execute('SELECT ROUND(COALESCE(SUM(internal_in),0),2),ROUND(COALESCE(SUM(internal_out),0),2) FROM daily WHERE currency=?',(currency,)).fetchone()
             if actual!=(incoming,outgoing):raise ValueError('Internal transfer aggregate mismatch')
         minimum=max(2,int(os.environ.get('PLAIDMCP_MIN_GROUP_COUNT','1')))

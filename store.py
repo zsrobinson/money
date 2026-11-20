@@ -117,6 +117,8 @@ def ingest_transactions(db, item, page):
         db.execute("DELETE FROM transactions WHERE id=? AND item=?", (t['transaction_id'],item))
 
 def ingest_holdings(db, item, data):
+    from detail import ingest_holdings as ingest_web_holdings
+    ingest_web_holdings(db,item,data)
     securities = {s['security_id']:s for s in data['securities']}
     db.execute("DELETE FROM holdings WHERE item=?", (item,))
     for h in data['holdings']:

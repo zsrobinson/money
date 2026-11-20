@@ -55,6 +55,7 @@ def reporting_store(db, app_path):
     try:
         app.row_factory=sqlite3.Row
         with app:
+            app.execute("BEGIN")
             if [r[0] for r in app.execute('SELECT version FROM schema_version')]!=[2]:raise ValueError('Unsupported app override schema')
             rules=[(json.loads(r['match_json']),json.loads(r['action_json'])) for r in app.execute('SELECT match_json,action_json FROM rules WHERE enabled=1 ORDER BY position,id')]
             edits={r['txn_id']:dict(r) for r in app.execute('SELECT txn_id,category,merchant,hidden,reviewed FROM txn_overrides')}

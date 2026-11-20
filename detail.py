@@ -14,6 +14,7 @@ from pathlib import Path
 PRIVATE_SCHEMA = '''
 CREATE TABLE IF NOT EXISTS web_accounts(provider_id TEXT PRIMARY KEY, label TEXT, official_name TEXT);
 CREATE TABLE IF NOT EXISTS web_transactions(provider_id TEXT PRIMARY KEY, item TEXT, description TEXT, merchant TEXT, logo_url TEXT, website TEXT, authorized_date TEXT, pfc_primary TEXT, pfc_detailed TEXT, pfc_confidence TEXT, payment_channel TEXT);
+CREATE TABLE IF NOT EXISTS web_holding_prices(item TEXT,account_id TEXT,security_id TEXT,price REAL,PRIMARY KEY(item,account_id,security_id));
 CREATE TABLE IF NOT EXISTS web_balance_history(account_id TEXT,date TEXT,current_cents INTEGER,estimated INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account_id,date));
 CREATE TABLE IF NOT EXISTS web_holding_history(account_id TEXT,security_id TEXT,date TEXT,quantity REAL,value_cents INTEGER,PRIMARY KEY(account_id,security_id,date));
 '''
@@ -57,6 +58,15 @@ def ingest_transactions(db, item, page, is_venmo):
                     t.get('authorized_date'),p.get('primary'),p.get('detailed'),p.get('confidence_level'),t.get('payment_channel')))
     for t in page.get('removed', []):
         db.execute('DELETE FROM web_transactions WHERE provider_id=? AND item=?',(t['transaction_id'],item))
+
+
+def ingest_holdings(db,item,data):
+    securities={s['security_id']:s for s in data['securities']}
+    db.execute('DELETE FROM web_holding_prices WHERE item=?',(item,))
+    for h in data['holdings']:
+        s=securities.get(h['security_id'],{})
+        security=opaque('sec',s.get('ticker_symbol') or '',s.get('name') or '',s.get('type','unknown') or '')
+        db.execute('INSERT OR REPLACE INTO web_holding_prices VALUES(?,?,?,?)',(item,h['account_id'],security,h.get('institution_price')))
 
 
 def record_history(db, today=None):
@@ -130,7 +140,11 @@ def publish(db, path):
         for row in db.execute('SELECT * FROM web_balance_history'):
             if out.execute('SELECT 1 FROM accounts WHERE id=?',(row[0],)).fetchone():out.execute('INSERT INTO balance_history VALUES(?,?,?,?)',row)
         for aid,ticker,name,kind,currency,quantity,value,basis in db.execute('SELECT m.ref,h.ticker,h.name,h.type,h.currency,h.quantity,h.value,h.cost_basis FROM holdings h JOIN account_alias m ON m.provider_ref=h.account AND m.item=h.item'):
-            if out.execute('SELECT 1 FROM accounts WHERE id=?',(aid,)).fetchone():out.execute('INSERT INTO holdings VALUES(?,?,?,?,?,?,?,?,?,?)',(aid,opaque('sec',ticker or '',name or '',kind or ''),ticker,name,kind,currency,quantity,value/quantity if quantity else None,cents(value),cents(basis)))
+            if out.execute('SELECT 1 FROM accounts WHERE id=?',(aid,)).fetchone():
+                security=opaque('sec',ticker or '',name or '',kind or '')
+                price=db.execute('SELECT p.price FROM web_holding_prices p JOIN account_alias m ON m.provider_ref=p.account_id AND m.item=p.item WHERE m.ref=? AND p.security_id=?',(aid,security)).fetchone()
+                price=price[0] if price and price[0] is not None else value/quantity if quantity else None
+                out.execute('INSERT INTO holdings VALUES(?,?,?,?,?,?,?,?,?,?)',(aid,security,ticker,name,kind,currency,quantity,price,cents(value),cents(basis)))
         for row in db.execute('SELECT * FROM web_holding_history'):
             if out.execute('SELECT 1 FROM accounts WHERE id=?',(row[0],)).fetchone():out.execute('INSERT INTO holding_history VALUES(?,?,?,?,?)',row)
         for item,merchant,currency,frequency,month,active in db.execute('SELECT item,merchant,currency,frequency,last_charged_month,active FROM recurring_merchants'):
