@@ -4,7 +4,7 @@ from pathlib import Path
 
 PHASE='starting'
 MATCH={}
-BANNED={'transaction_id','account_id','item_id','merchant_name','description','original_description','counterparties','note','notes','payment_note','payment_notes','username','user_name','routing_number','account_number','owners','owner_name','addresses','emails','phones','access_token','public_token','raw_descriptor','bank_description'}
+BANNED={'official_name','authorized_date','website','logo_url','pfc_confidence','payment_channel','tags','transaction_id','account_id','item_id','merchant_name','description','original_description','counterparties','note','notes','payment_note','payment_notes','username','user_name','routing_number','account_number','owners','owner_name','addresses','emails','phones','access_token','public_token','raw_descriptor','bank_description'}
 
 
 def check(value,strings,**context):
@@ -25,6 +25,13 @@ def check_fields(value):
 
 
 def audit_snapshot(public,private,private_strings,strict_strings,approved_business):
+    from overrides import reporting_store
+    with reporting_store(private,os.environ.get("MONEY_APP_DB")) as effective:
+        from transfers import match_internal
+        if effective is not private:match_internal(effective)
+        return _audit_snapshot(public,effective,private_strings,strict_strings,approved_business)
+
+def _audit_snapshot(public,private,private_strings,strict_strings,approved_business):
     """Never emit source strings; validate fields, SQL folding, bytes and every tool."""
     global PHASE
     from merchants import MERCHANT_SCHEMA,publish_merchants
@@ -159,6 +166,11 @@ def main():
     original_client=sync.Client;sync.Client=Audited
     fd,temporary=tempfile.mkstemp(dir=public.parent,prefix='.audit-');os.close(fd)
     candidate=Path(temporary);previous=os.environ.get('PLAIDMCP_PUBLIC')
+    detail_target=os.environ.get('MONEY_DETAIL_DB');detail_candidate=None
+    if detail_target:
+        fd,name=tempfile.mkstemp(dir=Path(detail_target).parent,prefix='.audit-detail-');os.close(fd)
+        detail_candidate=Path(name)
+        os.environ['MONEY_DETAIL_DB']=str(detail_candidate)
     try:
         os.environ['PLAIDMCP_PUBLIC']=str(candidate)
         PHASE='sync';sync.main()
@@ -177,12 +189,15 @@ def main():
                 else:raise ValueError('Audit pagination limit')
             sources,healthy,accounts=audit_snapshot(candidate,private,captured,strict,approved)
             failures=private.execute('SELECT COUNT(*) FROM items WHERE error IS NOT NULL OR as_of IS NULL').fetchone()[0]
-            history={institution:month for institution,month in private.execute('SELECT i.institution,MIN(substr(t.date,1,7)) FROM items i LEFT JOIN transactions t ON t.item=i.id AND t.pending=0 GROUP BY i.id')}
         if failures or healthy!=sources:raise ValueError('Source health gate failed; prior snapshot retained')
-        PHASE='publication';os.replace(candidate,public)
-        print(json.dumps({'privacy_passed':True,'linked_items':len(tokens),'sources':sources,'healthy_sources':healthy,'accounts':accounts,'ready_for_timer':bool(tokens and healthy==sources and not failures and accounts),'history_earliest_month':history,'recurring_provider_available':any(recurring_support)}))
+        PHASE='publication'
+        if detail_candidate:os.replace(detail_candidate,detail_target)
+        os.replace(candidate,public)
+        print(json.dumps({'privacy_passed':True,'linked_items':len(tokens),'sources':sources,'healthy_sources':healthy,'accounts':accounts,'ready_for_timer':bool(tokens and healthy==sources and not failures and accounts),'recurring_provider_available':any(recurring_support)}))
     finally:
         sync.Client=original_client;candidate.unlink(missing_ok=True)
+        if detail_candidate:detail_candidate.unlink(missing_ok=True)
+        if detail_target:os.environ['MONEY_DETAIL_DB']=detail_target
         if previous is None:os.environ.pop('PLAIDMCP_PUBLIC',None)
         else:os.environ['PLAIDMCP_PUBLIC']=previous
 

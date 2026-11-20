@@ -86,10 +86,19 @@ def sync_item(db, client, row):
 @telemetry.sync_run()
 def main():
     from sources import refresh_sources
+    if os.environ.get('MONEY_DETAIL_DB'):
+        from detail import validate_paths
+        validate_paths(os.environ.get('PLAIDMCP_PRIVATE','private'),os.environ.get('PLAIDMCP_PUBLIC','aggregate.sqlite'),os.environ['MONEY_DETAIL_DB'],os.environ.get('MONEY_APP_DB'))
     with private_store() as db:
         refresh_sources(db,os.environ.get('PLAIDMCP_PUBLIC','aggregate.sqlite'),Client)
         with telemetry.phase('publish'):
             publish(db,os.environ.get('PLAIDMCP_PUBLIC','aggregate.sqlite'))
+        detail_path=os.environ.get('MONEY_DETAIL_DB')
+        if detail_path:
+            from detail import record_history, reconstruct_history, publish as publish_detail
+            record_history(db)
+            reconstruct_history(db)
+            publish_detail(db,detail_path)
         db.commit()  # persist opaque identities generated during publication
 
 if __name__ == '__main__':

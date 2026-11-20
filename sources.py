@@ -62,7 +62,13 @@ class PlaidSource:
         missing=[{'account_id':a,'name':n,'type':t,'subtype':s} for a,n,t,s in old if not db.execute('SELECT 1 FROM account_alias WHERE provider_ref=? AND item=?',(a,self.key)).fetchone()]
         if missing: account_refs(db,self.key,missing)
         for a,n,t,s in old: db.execute('UPDATE accounts SET name=? WHERE id=?',((s or t).replace('_',' ').title(),a))
-        db.create_function('plaidmcp_category',2,category)
+        effective={}
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='effective_categories'").fetchone():
+            effective=dict(db.execute('SELECT id,category FROM effective_categories'))
+        if not db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='reporting_allocations'").fetchone():
+            db.execute('CREATE TEMP TABLE reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
+        db.create_function('plaidmcp_category',3,lambda primary,detail,tid:effective.get(tid,category(primary,detail)))
+        db.create_function('web_override',1,lambda tid:effective.get(tid))
         db.create_function('plaidmcp_detail',2,detailed)
         kinds=set()
         try: row=db.execute('SELECT product FROM credentials WHERE item=?',(self.key,)).fetchone()
@@ -89,9 +95,9 @@ class PlaidSource:
         if unmatched: accounts.append((unknown,ref,'Unassigned activity '+unknown[-6:],institution,'other','unassigned activity','UNKNOWN',None,None,None,'',json.dumps(['spending']),'unassigned'))
         sql="""WITH normalized AS (
             SELECT date AS day,COALESCE(m.ref,?) AS account_ref,
-              CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_category(primary_category,detailed_category) END AS category,
+              COALESCE(alloc.category,web_override(t.id),CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_category(primary_category,detailed_category,t.id) END) AS category,
               CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_detail(primary_category,detailed_category) END AS category_detailed,
-              t.currency,amount,primary_category,detailed_category FROM transactions t LEFT JOIN account_alias m
+              t.currency,COALESCE(alloc.amount,t.amount) AS amount,primary_category,detailed_category FROM transactions t LEFT JOIN reporting_allocations alloc ON alloc.id=t.id LEFT JOIN account_alias m
               ON m.provider_ref=t.account AND m.item=t.item LEFT JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id WHERE t.item=? AND pending=0)
             SELECT day,account_ref,?,category,category_detailed,currency,
               SUM(CASE WHEN category='income' THEN -amount ELSE 0 END),

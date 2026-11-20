@@ -2,6 +2,7 @@
 import asyncio
 import json
 import tempfile
+import socket
 from pathlib import Path
 import anyio
 import uvicorn
@@ -14,14 +15,16 @@ from tests.test_queries import ARGS
 async def main():
     with tempfile.TemporaryDirectory() as temp:
         root=Path(temp); seed(root/'private.sqlite',root/'aggregate.sqlite').close()
-        server=uvicorn.Server(uvicorn.Config(create_app(root/'aggregate.sqlite'),host='127.0.0.1',port=8767,access_log=False,log_level='error'))
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
+        server=uvicorn.Server(uvicorn.Config(create_app(root/'aggregate.sqlite'),host='127.0.0.1',port=port,access_log=False,log_level='error'))
         task=asyncio.create_task(server.serve())
         try:
             for _ in range(100):
                 if server.started: break
                 if task.done(): await task
                 await asyncio.sleep(.05)
-            async with streamable_http_client('http://127.0.0.1:8767/mcp') as (read,write,_):
+            async with streamable_http_client(f'http://127.0.0.1:{port}/mcp') as (read,write,_):
                 async with ClientSession(read,write) as session:
                     await session.initialize()
                     tools=await session.list_tools(); assert {t.name for t in tools.tools}==set(TOOLS)

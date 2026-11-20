@@ -288,3 +288,33 @@ reuse sanitized row identities, so uploading the same file again is idempotent.
 Two indistinguishable genuine rows split across files cannot be distinguished;
 use complete exports. Merchant rebuilds preserve imported rows. Venmo's separate
 monthly statement importer and configuration remain unchanged.
+
+## Private web application
+
+The `web/` application reads a separate, credential-free detail snapshot. It is
+never mounted in or readable by the aggregate MCP process. Sync retains the
+explicit web fields in `web_accounts` and `web_transactions`; it still projects
+only the original aggregate schemas for MCP. Peer-payment names and notes remain
+discarded. The web app owns its separate overrides database, and sync reads its
+versioned category/hidden/split edits when building aggregate reporting. Display
+merchant edits, notes, tags and custom category labels never enter MCP responses.
+
+Set `MONEY_DETAIL_DB` in the sync environment to opt into detail publication, and
+`MONEY_APP_DB` to its read-only overrides database. Aggregate, detail and app state
+need different paths; aggregate and detail require different access directories.
+Grant the web identity read-only access to detail and no access to sync state or
+aggregate. Grant sync read-only access to app overrides. Keep the operator account
+out of all database access groups. The web server must run behind Access with its
+own audience, and bind loopback only. Generic deployment values are in `web/`;
+host configuration belongs in the private deployment repository.
+
+`python fixture_data.py --output ./fixture-output` builds 26 months of invented
+data in a new directory, including accounts, transactions and valuation history.
+It refuses existing output and system deployment directories. Use only this or
+`web/`'s fixture generator for local development and screenshots. Never point a
+fixture server at production state.
+
+Daily observations record successful sync balances and holdings. Reconstructed
+cash/liability history is explicitly estimated; it never replaces observations.
+Investment history begins with collected valuations rather than invented prices.
+Backfill uses the existing cursor-reset path and existing Items only.
