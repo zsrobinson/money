@@ -135,3 +135,20 @@ def test_development_fixture_has_repeatable_full_history(tmp_path):
         assert a.execute('SELECT COUNT(*) FROM transactions WHERE pending=1').fetchone()[0]>0
         assert a.execute('SELECT COUNT(*) FROM holding_history').fetchone()[0]>700
         assert a.execute("SELECT COUNT(*) FROM sources WHERE kind='file_import'").fetchone()[0]==1
+
+
+def test_date_override_moves_all_reporting_periods_without_mutating_source(snapshot,tmp_path,monkeypatch):
+    from store import publish as aggregate_publish
+    from queries import Queries
+    db,aggregate=snapshot
+    app=tmp_path/'app.sqlite'
+    with sqlite3.connect(app) as edits:
+        edits.executescript('CREATE TABLE schema_version(version INTEGER);INSERT INTO schema_version VALUES(3);CREATE TABLE account_overrides(account_id TEXT,exclude_net_worth INTEGER);CREATE TABLE categories(code TEXT,parent TEXT);CREATE TABLE txn_splits(txn_id TEXT,idx INTEGER,amount_cents INTEGER,category TEXT);CREATE TABLE rules(id TEXT,position INTEGER,enabled INTEGER,match_json TEXT,action_json TEXT);CREATE TABLE txn_overrides(txn_id TEXT,category TEXT,merchant TEXT,hidden INTEGER,reviewed INTEGER,date TEXT);')
+        edits.execute('INSERT INTO txn_overrides VALUES(?,?,?,?,?,?)',(opaque('txn','bank','2'),None,None,None,None,'2026-10-31'))
+    monkeypatch.setenv('MONEY_APP_DB',str(app));aggregate_publish(db,aggregate)
+    q=Queries(aggregate)
+    assert q.cash_flow('category','2026-11-01','2026-12-01')['data']['totals'][0]['spending']==10
+    assert q.cash_flow('category','2026-10-01','2026-11-01')['data']['totals'][0]['spending']==180
+    assert db.execute("SELECT date FROM transactions WHERE id='2'").fetchone()==('2026-11-03',)
+    with sqlite3.connect(aggregate) as public:
+        assert public.execute("SELECT SUM(total) FROM merchants WHERE window='last_month' AND scope='all'").fetchone()==(180.0,)

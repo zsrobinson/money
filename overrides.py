@@ -4,6 +4,7 @@ import sqlite3
 import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
+from datetime import date
 from detail import opaque, cents
 from taxonomy import category, CATEGORIES
 
@@ -40,6 +41,17 @@ def evaluate(txn,rules,override=None):
     return result
 
 
+def register_dates(db):
+    values=dict(db.execute('SELECT id,date FROM effective_dates')) if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='effective_dates'").fetchone() else {}
+    db.create_function('web_date',1,lambda tid:values.get(tid))
+
+
+def override_date(value):
+    if value is None:return None
+    if not isinstance(value,str) or len(value)!=10 or date.fromisoformat(value).isoformat()!=value:raise ValueError('Invalid transaction date override')
+    return value
+
+
 @contextmanager
 def reporting_store(db, app_path):
     """Copy private state in memory; never mutate ingestion or attach app DB to MCP.
@@ -56,9 +68,11 @@ def reporting_store(db, app_path):
         app.row_factory=sqlite3.Row
         with app:
             app.execute("BEGIN")
-            if [r[0] for r in app.execute('SELECT version FROM schema_version')]!=[2]:raise ValueError('Unsupported app override schema')
+            version=[r[0] for r in app.execute('SELECT version FROM schema_version')]
+            if version not in ([2],[3]):raise ValueError('Unsupported app override schema')
             rules=[(json.loads(r['match_json']),json.loads(r['action_json'])) for r in app.execute('SELECT match_json,action_json FROM rules WHERE enabled=1 ORDER BY position,id')]
-            edits={r['txn_id']:dict(r) for r in app.execute('SELECT txn_id,category,merchant,hidden,reviewed FROM txn_overrides')}
+            date_column='date' if version==[3] else 'NULL AS date'
+            edits={r['txn_id']:dict(r) for r in app.execute('SELECT txn_id,category,merchant,hidden,reviewed,'+date_column+' FROM txn_overrides')}
             excluded=[r[0] for r in app.execute('SELECT account_id FROM account_overrides WHERE exclude_net_worth=1')]
             parents={r['code']:r['parent'] for r in app.execute('SELECT code,parent FROM categories') if r['code'] not in CATEGORIES}
             splits={}
@@ -67,6 +81,7 @@ def reporting_store(db, app_path):
         db.commit();db.backup(copy)
         copy.execute('CREATE TEMP TABLE networth_exclusions(account_id TEXT PRIMARY KEY)')
         copy.executemany('INSERT INTO networth_exclusions VALUES(?)',[(aid,) for aid in excluded])
+        copy.execute('CREATE TEMP TABLE effective_dates(id TEXT PRIMARY KEY,date TEXT)')
         copy.execute('CREATE TEMP TABLE effective_categories(id TEXT PRIMARY KEY,category TEXT)')
         copy.execute('CREATE TEMP TABLE reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
         def owned(code):
@@ -77,7 +92,10 @@ def reporting_store(db, app_path):
             matched=copy.execute('SELECT 1 FROM internal_matches WHERE item=? AND transaction_ref=?',(item,tid)).fetchone()
             txn={'account_id':aid,'amount_cents':-cents(amount),'category':'internal_transfer' if matched else category(primary,detail),'merchant':merchant,'description':description}
             ref=opaque('txn',item,tid)
-            value=evaluate(txn,rules,edits.get(ref))
+            edit=edits.get(ref)
+            changed_date=override_date(edit.get('date')) if edit else None
+            if changed_date:copy.execute('INSERT INTO effective_dates VALUES(?,?)',(tid,changed_date))
+            value=evaluate(txn,rules,edit)
             if value['hidden']:copy.execute('DELETE FROM transactions WHERE id=?',(tid,))
             else:
                 allocated=splits.get(ref,[])
@@ -89,6 +107,7 @@ def reporting_store(db, app_path):
                     copy.executemany('INSERT INTO reporting_allocations VALUES(?,?,?)',[(tid,cat,amount) for cat,amount in totals.items()])
                 elif value['category']!=txn['category']:
                     copy.execute('INSERT INTO effective_categories VALUES(?,?)',(tid,owned(value['category'])))
+        register_dates(copy)
         copy.commit()
         yield copy
     finally:

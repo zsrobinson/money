@@ -69,6 +69,8 @@ class PlaidSource:
             db.execute('CREATE TEMP TABLE reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
         db.create_function('plaidmcp_category',3,lambda primary,detail,tid:effective.get(tid,category(primary,detail)))
         db.create_function('web_override',1,lambda tid:effective.get(tid))
+        from overrides import register_dates
+        register_dates(db)
         db.create_function('plaidmcp_detail',2,detailed)
         kinds=set()
         try: row=db.execute('SELECT product FROM credentials WHERE item=?',(self.key,)).fetchone()
@@ -94,7 +96,7 @@ class PlaidSource:
         unmatched=db.execute('SELECT 1 FROM transactions t LEFT JOIN account_alias m ON m.provider_ref=t.account AND m.item=t.item WHERE t.item=? AND m.ref IS NULL LIMIT 1',(self.key,)).fetchone()
         if unmatched: accounts.append((unknown,ref,'Unassigned activity '+unknown[-6:],institution,'other','unassigned activity','UNKNOWN',None,None,None,'',json.dumps(['spending']),'unassigned'))
         sql="""WITH normalized AS (
-            SELECT date AS day,COALESCE(m.ref,?) AS account_ref,
+            SELECT COALESCE(web_date(t.id),t.date) AS day,COALESCE(m.ref,?) AS account_ref,
               COALESCE(alloc.category,web_override(t.id),CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_category(primary_category,detailed_category,t.id) END) AS category,
               CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_detail(primary_category,detailed_category) END AS category_detailed,
               t.currency,COALESCE(alloc.amount,t.amount) AS amount,primary_category,detailed_category FROM transactions t LEFT JOIN reporting_allocations alloc ON alloc.id=t.id LEFT JOIN account_alias m
