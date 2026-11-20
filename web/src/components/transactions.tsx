@@ -76,7 +76,7 @@ export function TxnRows({
               // Columns follow the list's own width, so narrow cards stack too.
               showAccount
                 ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[4.5rem_2rem_minmax(0,1.4fr)_minmax(0,1fr)_7rem] @3xl:grid-cols-[4.5rem_2rem_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7rem]"
-                : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[4.5rem_2rem_minmax(0,1.4fr)_minmax(0,1fr)_7rem]"
+                : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[4rem_2rem_minmax(0,2fr)_minmax(0,1fr)_6.5rem]"
             )}
           >
             <span className="hidden text-sm text-muted-foreground tabular-nums @xl:block">

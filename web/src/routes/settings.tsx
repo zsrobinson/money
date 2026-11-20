@@ -390,7 +390,7 @@ function TagRow({ tag: t }: { tag: Tag }) {
       <NativeSelect
         size="sm"
         aria-label={`Colour for ${t.name}`}
-        className="ml-auto w-32 shrink-0"
+        className="ml-auto w-28 shrink-0"
         value={t.hue ?? ""}
         onChange={(e) => patch.mutate({ hue: e.target.value || null })}
       >

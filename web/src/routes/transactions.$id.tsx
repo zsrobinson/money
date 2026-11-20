@@ -100,7 +100,10 @@ function TransactionView({ t }: { t: TxnDetail }) {
     <Page>
       <PageHeader>
         <div className="flex min-w-0 items-center gap-3">
-          <MerchantMark name={txnName(t)} className="size-10 text-sm" />
+          <MerchantMark
+            name={txnName(t)}
+            className="size-10 bg-card text-sm ring-1 ring-foreground/10"
+          />
           <div className="flex min-w-0 flex-col">
             <PageTitle className="truncate">{txnName(t)}</PageTitle>
             <PageMeta>

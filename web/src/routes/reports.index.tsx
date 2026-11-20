@@ -51,7 +51,24 @@ function CategoryReport() {
   const navigate = useNavigate({ from: "/reports/" })
   const q = useQuery(categoryReportQuery(range))
   const d = q.data
-  const top = d?.rows.filter((r) => !r.parent) ?? []
+  // Parents include the categories you created inside them.
+  const rows = (d?.rows ?? []).map((r) => {
+    const kids = r.parent
+      ? []
+      : (d?.rows ?? []).filter((x) => x.parent === r.code)
+    return {
+      ...r,
+      cents: r.cents + kids.reduce((s, k) => s + k.cents, 0),
+      previousCents:
+        r.previousCents + kids.reduce((s, k) => s + k.previousCents, 0),
+      count: r.count + kids.reduce((s, k) => s + k.count, 0),
+    }
+  })
+  const top = rows.filter((r) => !r.parent).sort((a, b) => b.cents - a.cents)
+  const ordered = top.flatMap((r) => [
+    r,
+    ...rows.filter((x) => x.parent === r.code),
+  ])
   return (
     <Page>
       <PageHeader>
@@ -85,6 +102,7 @@ function CategoryReport() {
               {money(d.totalCents, { whole: true })}
             </Stat>
             <Stat label="Categories">{top.length}</Stat>
+            <Stat label="Largest">{top[0]?.label ?? "—"}</Stat>
           </StatRow>
           <PageGrid layout="wide">
             <SectionCard title="Share of spending">
@@ -155,13 +173,17 @@ function CategoryReport() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {d.rows.map((r) => {
+                {ordered.map((r) => {
                   const change = r.previousCents
                     ? (r.cents - r.previousCents) / r.previousCents
                     : null
                   return (
                     <TableRow key={r.code}>
-                      <TableCell className={r.parent ? "pl-9" : "pl-5"}>
+                      <TableCell
+                        className={
+                          r.parent ? "pl-9 text-muted-foreground" : "pl-5"
+                        }
+                      >
                         <Link
                           to="/reports/categories/$code"
                           params={{ code: r.code }}

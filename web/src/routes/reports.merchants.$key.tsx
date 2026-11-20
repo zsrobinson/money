@@ -52,7 +52,10 @@ function MerchantDetail() {
     <Page>
       <PageHeader>
         <div className="flex min-w-0 items-center gap-3">
-          <MerchantMark name={d?.name} className="size-10 text-sm" />
+          <MerchantMark
+            name={d?.name}
+            className="size-10 bg-card text-sm ring-1 ring-foreground/10"
+          />
           <div className="flex min-w-0 flex-col">
             <PageTitle className="truncate">{d?.name ?? "Merchant"}</PageTitle>
             {d ? (

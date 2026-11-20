@@ -82,7 +82,7 @@ function Merchants() {
         />
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
-        <InputGroup className="max-w-sm min-w-0 flex-1">
+        <InputGroup className="min-w-0 basis-full sm:max-w-sm sm:flex-1 sm:basis-auto">
           <InputGroupAddon>
             <SearchIcon />
           </InputGroupAddon>
