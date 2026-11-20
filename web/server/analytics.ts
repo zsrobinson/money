@@ -85,8 +85,13 @@ export function accountSeries(
   const history = c.detail.balanceHistory.get(account.id) ?? []
   const at = balanceAt(history)
   const sign = account.liability ? -1 : 1
+  // A closed account stops at its last reported balance instead of carrying
+  // a stale balance into today's totals.
+  const closedAfter =
+    account.availability === "available" ? undefined : history.at(-1)?.date
   return dates.map((d) => {
     const v = at(d)
+    if (closedAfter !== undefined && d > closedAfter) return null
     return v == null ? null : sign * v
   })
 }

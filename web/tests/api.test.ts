@@ -457,3 +457,17 @@ test("rollover carries unspent budget forward and history compares budget to act
   const total = (await call("GET", "/budgets/history?months=3")).json.months
   assert.ok(total.every((h: { budgetCents: number }) => h.budgetCents > 0))
 })
+
+test("closed accounts stop counting after their last balance", async () => {
+  const m = model.get()
+  const old = m.accounts.find((a) => a.availability !== "available")!
+  await call("PATCH", `/accounts/${old.id}`, { excludeNetWorth: false })
+  const summary = (await call("GET", "/summary?range=all")).json
+  const counted = m.accounts
+    .filter((a) => a.availability === "available" && !a.excludeNetWorth)
+    .reduce((s, a) => s + (a.balanceCents ?? 0), 0)
+  assert.equal(summary.netWorth.cents, counted)
+  const early = summary.netWorth.series.find((p: { date: string }) => p.date < "2025-03-01")
+  assert.ok(early)
+  await call("PATCH", `/accounts/${old.id}`, { excludeNetWorth: true })
+})

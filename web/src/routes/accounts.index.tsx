@@ -1,24 +1,29 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Page, PageHeader, PageStack, PageTitle } from "@zsrobinson/shell"
 import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Button } from "@zsrobinson/shell/ui/button"
+import { z } from "zod"
 import {
   Amount,
   Change,
   Loading,
+  RangeSelect,
   SectionCard,
   Stat,
   StatRow,
 } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
-import { accountKind, money } from "@/lib/format"
-import { accountsQuery } from "@/lib/queries"
-import type { AccountListItem } from "@/lib/types"
+import { accountKind, epoch, epochFullDate, money } from "@/lib/format"
+import { accountsQuery, summaryQuery } from "@/lib/queries"
+import type { AccountListItem, Range } from "@/lib/types"
 
 export const Route = createFileRoute("/accounts/")({
+  validateSearch: z.object({
+    range: z.enum(["1m", "3m", "6m", "ytd", "1y", "all"]).optional(),
+  }),
   staticData: { crumbs: [{ label: "Accounts", to: "/accounts" }] },
   component: Accounts,
 })
@@ -28,19 +33,16 @@ const KINDS = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
 function Accounts() {
   usePageTitle("Accounts")
   const accounts = useQuery(accountsQuery)
+  const { range } = Route.useSearch()
+  const navigate = useNavigate({ from: "/accounts/" })
+  // Totals come from the server: every open account except those you
+  // excluded from net worth, hidden ones included.
+  const summary = useQuery(summaryQuery(range))
+  const nw = summary.data?.netWorth
   const [showHistorical, setShowHistorical] = useState(false)
   const list = accounts.data ?? []
   const open = list.filter((a) => a.availability === "available" && !a.hidden)
   const closed = list.filter((a) => a.availability !== "available" || a.hidden)
-  const counted = open.filter((a) => !a.excludeNetWorth)
-  const assets = counted.reduce(
-    (s, a) => s + Math.max(0, a.balanceCents ?? 0),
-    0
-  )
-  const debts = counted.reduce(
-    (s, a) => s + Math.min(0, a.balanceCents ?? 0),
-    0
-  )
   return (
     <Page>
       <PageHeader>
@@ -57,17 +59,59 @@ function Accounts() {
         <Loading rows={8} />
       ) : (
         <PageStack>
-          <StatRow>
-            <Stat label="Net worth">
-              <Amount cents={assets + debts} tone="plain" whole />
-            </Stat>
-            <Stat label="Assets">
-              <Amount cents={assets} tone="plain" whole />
-            </Stat>
-            <Stat label="Liabilities">
-              <Amount cents={debts} tone="plain" whole />
-            </Stat>
-          </StatRow>
+          <SectionCard
+            title="Assets and liabilities"
+            action={
+              summary.data ? (
+                <RangeSelect
+                  value={summary.data.range}
+                  onChange={(r: Range) =>
+                    void navigate({ search: { range: r }, replace: true })
+                  }
+                />
+              ) : null
+            }
+          >
+            <StatRow className="mb-4">
+              <Stat
+                label="Net worth"
+                detail={
+                  nw ? (
+                    <Change cents={nw.changeCents} suffix="in this range" />
+                  ) : undefined
+                }
+              >
+                <Amount cents={nw?.cents} tone="plain" whole />
+              </Stat>
+              <Stat label="Assets">
+                <Amount cents={nw?.assetsCents} tone="plain" whole />
+              </Stat>
+              <Stat label="Liabilities">
+                <Amount cents={nw?.liabilitiesCents} tone="plain" whole />
+              </Stat>
+            </StatRow>
+            <TrendChart
+              label="Assets, liabilities and net worth over time"
+              loading={!nw}
+              data={(nw?.series ?? []).map((p) => ({
+                time: epoch(p.date),
+                assets: p.assets / 100,
+                liabilities: p.liabilities / 100,
+                net: p.net / 100,
+              }))}
+              config={{
+                assets: { label: "Assets", color: "var(--chart-positive)" },
+                liabilities: {
+                  label: "Liabilities",
+                  color: "var(--chart-negative)",
+                },
+                net: { label: "Net worth", color: "var(--chart-1)" },
+              }}
+              format={(v) => money(Math.round(v * 100), { whole: true })}
+              formatTime={epochFullDate}
+              className="h-60"
+            />
+          </SectionCard>
           {KINDS.map((kind) => {
             const group = open.filter((a) => accountKind(a) === kind)
             if (!group.length) return null

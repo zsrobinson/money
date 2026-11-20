@@ -38,7 +38,7 @@ import {
   relativeDay,
 } from "@/lib/format"
 import { usePageTitle } from "@/lib/crumb"
-import { metaQuery, summaryQuery } from "@/lib/queries"
+import { investmentsQuery, metaQuery, summaryQuery } from "@/lib/queries"
 import type { Range } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
@@ -61,6 +61,7 @@ function Dashboard() {
   const setRange = (r: Range) =>
     void navigate({ search: { range: r }, replace: true })
   const s = summary.data
+  const investments = useQuery(investmentsQuery("3m"))
   return (
     <Page>
       <PageHeader>
@@ -273,23 +274,83 @@ function Dashboard() {
             </SectionCard>
           </PageGrid>
           <PageGrid layout="wide">
-            <SectionCard
-              title="Recent transactions"
-              flush
-              action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  render={<Link to="/transactions" />}
-                  nativeButton={false}
+            <PageStack>
+              <SectionCard
+                title="Recent transactions"
+                flush
+                action={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    render={<Link to="/transactions" />}
+                    nativeButton={false}
+                  >
+                    View all
+                    <ArrowRightIcon data-icon="inline-end" />
+                  </Button>
+                }
+              >
+                <TxnRows items={s.recent} showAccount={false} />
+              </SectionCard>
+              {investments.data?.holdings.length ? (
+                <SectionCard
+                  title="Investments"
+                  action={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      render={<Link to="/investments" />}
+                      nativeButton={false}
+                    >
+                      Holdings
+                    </Button>
+                  }
                 >
-                  View all
-                  <ArrowRightIcon data-icon="inline-end" />
-                </Button>
-              }
-            >
-              <TxnRows items={s.recent} showAccount={false} />
-            </SectionCard>
+                  <StatRow className="mb-3">
+                    <Stat label="Value">
+                      <Amount
+                        cents={investments.data.totalCents}
+                        tone="plain"
+                        whole
+                      />
+                    </Stat>
+                    <Stat label="Gain on cost">
+                      <Amount
+                        cents={investments.data.gainCents}
+                        tone="signed"
+                        whole
+                      />
+                    </Stat>
+                    {investments.data.series.length > 1 ? (
+                      <Stat label="Last 3 months">
+                        <Amount
+                          cents={
+                            investments.data.series.at(-1)!.cents -
+                            investments.data.series[0].cents
+                          }
+                          tone="signed"
+                          whole
+                        />
+                      </Stat>
+                    ) : null}
+                  </StatRow>
+                  <TrendChart
+                    label="Investment value, last 3 months"
+                    baseline="data"
+                    data={investments.data.series.map((p) => ({
+                      time: epoch(p.date),
+                      value: p.cents / 100,
+                    }))}
+                    config={{
+                      value: { label: "Value", color: "var(--chart-1)" },
+                    }}
+                    format={whole}
+                    formatTime={epochFullDate}
+                    className="h-36"
+                  />
+                </SectionCard>
+              ) : null}
+            </PageStack>
             <PageStack>
               <SectionCard
                 title="Upcoming"
