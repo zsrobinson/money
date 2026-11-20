@@ -155,6 +155,8 @@ const SETTINGS = z
     weekStartsOn: z.enum(["sunday", "monday"]),
     showPending: z.boolean(),
     reviewNewTransactions: z.boolean(),
+    /** Category code to the first month whose leftover carries forward. */
+    budgetRollover: z.record(z.string(), z.string().refine(isMonth)),
   })
   .strict()
 type Settings = z.infer<typeof SETTINGS>
@@ -163,6 +165,7 @@ const DEFAULT_SETTINGS: Settings = {
   weekStartsOn: "monday",
   showPending: true,
   reviewNewTransactions: true,
+  budgetRollover: {},
 }
 
 /** JSON API mounted under /api on the Access-guarded shell server. */
@@ -477,6 +480,7 @@ export function createApi(model: Model) {
       min: q.min && /^\d+$/.test(q.min) ? Number(q.min) : undefined,
       max: q.max && /^\d+$/.test(q.max) ? Number(q.max) : undefined,
       direction: q.direction === "in" || q.direction === "out" ? q.direction : undefined,
+      flow: ["activity", "bank_transfer", "peer_payment"].includes(q.flow) ? q.flow : undefined,
       status: ["unreviewed", "reviewed", "hidden", "pending", "split", "all"].includes(q.status) ? q.status : "visible",
       sort: ["date", "amount", "merchant"].includes(q.sort) ? q.sort : "date",
       order: q.order === "asc" ? "asc" : "desc",
@@ -503,6 +507,7 @@ export function createApi(model: Model) {
       if (f.tag && !t.tags.includes(f.tag)) return false
       if (f.from && t.date < f.from) return false
       if (f.to && t.date > f.to) return false
+      if (f.flow && t.flowKind !== f.flow) return false
       if (f.direction === "in" && t.amountCents <= 0) return false
       if (f.direction === "out" && t.amountCents >= 0) return false
       const abs = Math.abs(t.amountCents)
@@ -536,6 +541,41 @@ export function createApi(model: Model) {
       outflowCents: outflow,
       offset: f.offset,
       items: list.slice(f.offset, f.offset + f.limit).map((t) => txnJson(m, t)),
+    })
+  })
+  api.get("/transactions.csv", (c) => {
+    const m = model.get()
+    const rows = filterTxns(m, TxnQuery(c))
+    const tagName = new Map(m.tags.map((t) => [t.id, t.name]))
+    // Quote every cell and neutralise spreadsheet formulas.
+    const cell = (v: string | number | null | undefined) => {
+      let text = v == null ? "" : String(v)
+      if (typeof v === "string" && /^[=+\-@\t\r]/.test(text)) text = `'${text}`
+      return `"${text.replace(/"/g, '""')}"`
+    }
+    const lines = [
+      ["Date", "Merchant", "Description", "Category", "Account", "Amount", "Currency", "Status", "Tags", "Note"].map(cell).join(","),
+      ...rows.map((t) =>
+        [
+          t.date,
+          t.merchantEff,
+          t.description,
+          t.splits?.length ? t.splits.map((x) => m.category(x.category).label).join(" + ") : m.category(t.categoryEff).label,
+          m.account.get(t.accountId)?.name,
+          (t.amountCents / 100).toFixed(2),
+          t.currency,
+          t.pending ? "Pending" : t.hidden ? "Hidden" : t.reviewed ? "Reviewed" : "Needs review",
+          t.tags.map((x) => tagName.get(x)).join("; "),
+          t.note,
+        ]
+          .map(cell)
+          .join(",")
+      ),
+    ]
+    return c.body(lines.join("\r\n") + "\r\n", 200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="transactions-${m.today}.csv"`,
+      "Cache-Control": "no-store",
     })
   })
   api.get("/transactions/:id", (c) => {
@@ -891,53 +931,109 @@ export function createApi(model: Model) {
       rows: budgeted.sort((a, b) => b.spentCents / (b.budgetCents || 1) - a.spentCents / (a.budgetCents || 1)).slice(0, 5),
     }
   }
-  function budgetRows(m: Computed, month: string) {
-    const amounts = new Map(
-      (db.prepare("SELECT category, amount_cents FROM budgets WHERE month=?").all(month) as { category: string; amount_cents: number }[]).map(
-        (r) => [r.category, r.amount_cents]
-      )
-    )
+  /** Budget amounts for a month: the month's own amount, else the default. */
+  function budgetBook(m: Computed) {
+    const monthly = new Map<string, Map<string, number>>()
+    for (const r of db.prepare("SELECT month, category, amount_cents FROM budgets").all() as { month: string; category: string; amount_cents: number }[]) {
+      let mm = monthly.get(r.month)
+      if (!mm) monthly.set(r.month, (mm = new Map()))
+      mm.set(r.category, r.amount_cents)
+    }
     const defaults = new Map(
-      (db.prepare("SELECT category, amount_cents FROM budget_defaults").all() as { category: string; amount_cents: number }[]).map(
-        (r) => [r.category, r.amount_cents]
-      )
+      (db.prepare("SELECT category, amount_cents FROM budget_defaults").all() as { category: string; amount_cents: number }[]).map((r) => [r.category, r.amount_cents])
     )
-    const expense = m.categories.filter((x) => x.group === "expense" && !x.hidden)
-    const budgetOf = (code: string) => amounts.get(code) ?? defaults.get(code)
-    // Custom categories without their own budget roll into their parent.
-    const target = (code: string) => {
+    const budgetOf = (month: string, code: string) => monthly.get(month)?.get(code) ?? defaults.get(code)
+    // Custom categories without their own budget count toward their parent.
+    const target = (month: string, code: string) => {
       const cat = m.category(code)
-      return cat.custom && budgetOf(code) == null ? cat.owned : code
+      return cat.custom && budgetOf(month, code) == null ? cat.owned : code
     }
-    const spent = (from: string, to: string) => {
-      const out = new Map<string, number>()
-      for (const a of m.allocations) {
-        if (a.group !== "expense" || a.txn.pending || a.txn.date < from || a.txn.date > to) continue
-        const key = target(a.category)
-        out.set(key, (out.get(key) ?? 0) + spendCents(a))
+    const spentByMonth = new Map<string, Map<string, number>>()
+    for (const a of m.allocations) {
+      if (a.group !== "expense" || a.txn.pending) continue
+      const month = monthOf(a.txn.date)
+      let mm = spentByMonth.get(month)
+      if (!mm) spentByMonth.set(month, (mm = new Map()))
+      const key = target(month, a.category)
+      mm.set(key, (mm.get(key) ?? 0) + spendCents(a))
+    }
+    const spent = (month: string, code: string) => spentByMonth.get(month)?.get(code) ?? 0
+    const rollover = settings().budgetRollover
+    /** Unspent (or overspent) budget carried into `month` since rollover began. */
+    const carried = (month: string, code: string) => {
+      const since = rollover[code]
+      if (!since || since >= month) return 0
+      let carry = 0
+      for (let mo = since; mo < month; mo = addMonths(mo, 1)) {
+        const budget = budgetOf(mo, code)
+        if (budget == null) continue
+        carry += budget - spent(mo, code)
       }
-      return out
+      return carry
     }
-    const now = spent(`${month}-01`, monthEnd(month))
-    const last3 = spent(`${addMonths(month, -3)}-01`, monthEnd(addMonths(month, -1)))
-    const last = spent(`${addMonths(month, -1)}-01`, monthEnd(addMonths(month, -1)))
-    const income = monthlyFlows(m, [month])[0].incomeCents
+    return { monthly, defaults, budgetOf, spent, carried, rollover }
+  }
+  function budgetRows(m: Computed, month: string) {
+    const book = budgetBook(m)
+    const expense = m.categories.filter((x) => x.group === "expense" && !x.hidden)
+    const avg3 = (code: string) => Math.round([1, 2, 3].reduce((sum, n) => sum + book.spent(addMonths(month, -n), code), 0) / 3)
     return {
-      incomeCents: income,
-      rows: expense.map((x) => ({
-        code: x.code,
-        label: x.label,
-        parent: x.parent,
-        custom: x.custom,
-        budgetCents: budgetOf(x.code) ?? null,
-        source: amounts.has(x.code) ? "month" : defaults.has(x.code) ? "default" : null,
-        defaultCents: defaults.get(x.code) ?? null,
-        spentCents: now.get(x.code) ?? 0,
-        lastMonthCents: last.get(x.code) ?? 0,
-        averageCents: Math.round((last3.get(x.code) ?? 0) / 3),
-      })),
+      incomeCents: monthlyFlows(m, [month])[0].incomeCents,
+      rows: expense.map((x) => {
+        const budget = book.budgetOf(month, x.code) ?? null
+        return {
+          code: x.code,
+          label: x.label,
+          parent: x.parent,
+          custom: x.custom,
+          budgetCents: budget,
+          source: book.monthly.get(month)?.has(x.code) ? "month" : book.defaults.has(x.code) ? "default" : null,
+          defaultCents: book.defaults.get(x.code) ?? null,
+          rollover: Boolean(book.rollover[x.code]),
+          rolloverCents: budget == null ? 0 : book.carried(month, x.code),
+          spentCents: book.spent(month, x.code),
+          lastMonthCents: book.spent(addMonths(month, -1), x.code),
+          averageCents: avg3(x.code),
+        }
+      }),
     }
   }
+  api.get("/budgets/history", (c) => {
+    const m = model.get()
+    const count = Math.min(24, Math.max(3, Number(c.req.query("months")) || 12))
+    const code = c.req.query("category")
+    const end = monthOf(m.today)
+    const book = budgetBook(m)
+    const months = monthsBetween(addMonths(end, -(count - 1)), end)
+    const codes = code ? [code] : m.categories.filter((x) => x.group === "expense").map((x) => x.code)
+    return c.json({
+      category: code ?? null,
+      months: months.map((month) => {
+        let budgetCents = 0
+        let spentCents = 0
+        for (const k of codes) {
+          const b = book.budgetOf(month, k)
+          if (b == null) continue
+          budgetCents += b
+          spentCents += book.spent(month, k)
+        }
+        return { month, budgetCents, spentCents }
+      }),
+    })
+  })
+  api.put("/budgets/rollover/:category", async (c) => {
+    const b = await body(c, z.object({ enabled: z.boolean(), since: z.string().refine(isMonth).optional() }).strict())
+    const m = model.get()
+    const code = c.req.param("category")
+    if (!m.categories.some((x) => x.code === code && x.group === "expense")) throw notFound("Category")
+    const next = { ...settings().budgetRollover }
+    if (b.enabled) next[code] = b.since ?? monthOf(m.today)
+    else delete next[code]
+    write(() =>
+      db.prepare("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json").run("budgetRollover", JSON.stringify(next))
+    )
+    return c.json({ ok: true })
+  })
   api.get("/budgets", (c) => {
     const m = model.get()
     const month = isMonth(c.req.query("month")) ? c.req.query("month")! : monthOf(m.today)

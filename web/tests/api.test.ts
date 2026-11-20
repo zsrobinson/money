@@ -181,3 +181,45 @@ test("unknown ids and bad bodies return clear client errors", async () => {
   const res = await api.request("/settings", { method: "PATCH", body: "not json" })
   assert.equal(res.status, 400)
 })
+
+test("CSV export returns every matching row with formula-safe cells", async () => {
+  const t = txns().find((x) => x.merchant === "Example Fuel Stop" && !x.splits)!
+  await call("PATCH", `/transactions/${t.id}`, { note: '=HYPERLINK("x")' })
+  const res = await api.request("/transactions.csv?q=fuel%20stop&status=all")
+  assert.equal(res.status, 200)
+  assert.match(res.headers.get("Content-Type") ?? "", /text\/csv/)
+  const text = await res.text()
+  const lines = text.trim().split("\r\n")
+  const expected = txns().filter((x) => x.merchantKey.includes("fuel stop")).length
+  assert.equal(lines.length - 1, expected)
+  assert.match(text, /"'=HYPERLINK\(""x""\)"/)
+  assert.doesNotMatch(text, /,"=HYPERLINK/)
+  await call("PATCH", `/transactions/${t.id}`, { note: null })
+})
+
+test("flow filter narrows to transfers or peer payments", async () => {
+  const transfers = await call("GET", "/transactions?flow=bank_transfer&limit=200")
+  assert.ok(transfers.json.total > 0)
+  assert.ok(transfers.json.items.every((x: { flowKind: string }) => x.flowKind === "bank_transfer"))
+  const peers = await call("GET", "/transactions?flow=peer_payment&limit=5")
+  assert.ok(peers.json.items.every((x: { flowKind: string }) => x.flowKind === "peer_payment"))
+})
+
+test("rollover carries unspent budget forward and history compares budget to actual", async () => {
+  const month = FIXTURE_TODAY.slice(0, 7)
+  const since = "2026-08"
+  assert.equal((await call("PUT", "/budgets/rollover/entertainment", { enabled: true, since })).status, 200)
+  const rows = (await call("GET", `/budgets?month=${month}`)).json.rows
+  const row = rows.find((r: { code: string }) => r.code === "entertainment")
+  const history = (await call("GET", "/budgets/history?months=6&category=entertainment")).json.months as { month: string; budgetCents: number; spentCents: number }[]
+  const carry = history.filter((h) => h.month >= since && h.month < month).reduce((s, h) => s + h.budgetCents - h.spentCents, 0)
+  assert.equal(row.rollover, true)
+  assert.equal(row.rolloverCents, carry)
+  assert.equal(history.length, 6)
+  assert.ok(history.every((h) => h.budgetCents === 9000))
+  await call("PUT", "/budgets/rollover/entertainment", { enabled: false })
+  const after = (await call("GET", `/budgets?month=${month}`)).json.rows.find((r: { code: string }) => r.code === "entertainment")
+  assert.equal(after.rolloverCents, 0)
+  const total = (await call("GET", "/budgets/history?months=3")).json.months
+  assert.ok(total.every((h: { budgetCents: number }) => h.budgetCents > 0))
+})
