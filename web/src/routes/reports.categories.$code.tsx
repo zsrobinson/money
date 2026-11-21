@@ -64,7 +64,13 @@ function CategoryDetail() {
       formatTick={moneyTick}
       references={
         budget?.totalBudgetCents != null
-          ? [{ value: budget.totalBudgetCents / 100, label: "Budget" }]
+          ? [
+              {
+                value: budget.totalBudgetCents / 100,
+                label: "Budget",
+                side: "axis",
+              },
+            ]
           : []
       }
       className="h-56"
