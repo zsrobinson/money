@@ -118,8 +118,15 @@ def test_sensitive_fields_never_persist_or_publish(snapshot):
     for name in TOOLS:
         encoded=json.dumps(getattr(q,name)(**ARGS.get(name,{})),ensure_ascii=False).encode()
         for key,value in secrets.items(): assert key.encode() not in encoded and value.encode() not in encoded
-    for data in (path.read_bytes(),__import__('pathlib').Path(db.execute('PRAGMA database_list').fetchone()[2]).read_bytes()):
-        for key,value in secrets.items(): assert key.encode() not in data and value.encode() not in data
+    for key,value in secrets.items():
+        assert key.encode() not in path.read_bytes() and value.encode() not in path.read_bytes()
+    # The explicit provider display name is now web-only private data. Owner,
+    # routing and contact payloads remain discarded rather than persisted.
+    private=__import__('pathlib').Path(db.execute('PRAGMA database_list').fetchone()[2]).read_bytes()
+    for key,value in secrets.items():
+        assert key.encode() not in private
+        if key!='owner_name': assert value.encode() not in private
+    assert db.execute('SELECT label FROM web_accounts WHERE provider_id=?',('provider-id-sensitive',)).fetchone()==(secrets['owner_name'],)
     assert b'provider-id-sensitive' not in path.read_bytes()
 
 

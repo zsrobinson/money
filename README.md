@@ -74,7 +74,7 @@ holdings may share one Item. Pending transactions are excluded from publication.
 Private credentials/state are outside Git. Separate system users separate sync
 secrets/raw stripped records from the MCP's aggregate-only snapshot. Provider
 account names are fingerprinted for matching and replaced with generated labels;
-descriptions, person counterparties, routing/owner/contact fields are not persisted.
+person counterparties and routing/owner/contact fields are not persisted. The web-only tables retain the explicitly selected transaction descriptions and account display fields.
 Only verified normalized business names or conservative public-brand fallback labels are retained privately for merchant aggregates.
 No account numbers except optional last four; no financial writes exist. Link's
 CSRF/same-host helper binds 127.0.0.1:8768, warns on duplicate institutions and
@@ -164,8 +164,7 @@ Descriptors containing personal-payment rails, honorific/name patterns, email
 addresses or unrecognized extra words are rejected. Missing business evidence
 means Other. Provider location-only labels are rejected when they match structured
 location fields. Conservative rules may omit genuine businesses and cannot prove
-that every upstream classification is correct. No raw descriptor is persisted,
-even in private state; only the normalized label/provenance is retained privately.
+that every upstream classification is correct. Descriptor normalization never publishes raw text. Web-only ingestion separately retains the selected name field; original_description remains ephemeral.
 
 `merchant_source` distinguishes provider_name, descriptor_fallback, mixed and
 unknown. Unknown posted non-Venmo spending is now included in Other, rather than
@@ -288,3 +287,33 @@ reuse sanitized row identities, so uploading the same file again is idempotent.
 Two indistinguishable genuine rows split across files cannot be distinguished;
 use complete exports. Merchant rebuilds preserve imported rows. Venmo's separate
 monthly statement importer and configuration remain unchanged.
+
+## Private web application
+
+The `web/` application reads a separate, credential-free detail snapshot. It is
+never mounted in or readable by the aggregate MCP process. Sync retains the
+explicit web fields in `web_accounts` and `web_transactions`; it still projects
+only the original aggregate schemas for MCP. Peer-payment names and notes remain
+discarded. The web app owns its separate overrides database, and sync reads its
+versioned category/date/hidden/split edits when building aggregate reporting. Display
+merchant edits, notes, tags and custom category labels never enter MCP responses.
+
+Set `MONEY_DETAIL_DB` in the sync environment to opt into detail publication, and
+`MONEY_APP_DB` to its read-only overrides database. Aggregate, detail and app state
+need different paths; aggregate and detail require different access directories.
+Grant the web identity read-only access to detail and no access to sync state or
+aggregate. Grant sync read-only access to app overrides. Keep the operator account
+out of all database access groups. The web server must run behind Access with its
+own audience, and bind loopback only. Generic deployment values are in `web/`;
+host configuration belongs in the private deployment repository.
+
+`python fixture_data.py --output ./fixture-output` builds 26 months of invented
+data in a new directory, including accounts, transactions and valuation history.
+It refuses existing output and system deployment directories. Use only this or
+`web/`'s fixture generator for local development and screenshots. Never point a
+fixture server at production state.
+
+Daily observations record successful sync balances and holdings. Reconstructed
+cash/liability history is explicitly estimated; it never replaces observations.
+Investment history begins with collected valuations rather than invented prices.
+Backfill uses the existing cursor-reset path and existing Items only.

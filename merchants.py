@@ -82,7 +82,9 @@ def publish_merchants(db,out,today=None):
     disabled=list(filter(None,os.environ.get('PLAIDMCP_DISABLED_SOURCES','').split(',')))
     excluded=' AND COALESCE(s.ref,\'\') NOT IN ('+','.join('?' for _ in disabled)+')' if disabled else ''
     today=today or today_utc()
-    earliest=db.execute('SELECT MIN(date) FROM transactions WHERE pending=0').fetchone()[0]
+    from overrides import register_dates
+    register_dates(db)
+    earliest=db.execute('SELECT MIN(COALESCE(web_date(id),date)) FROM transactions WHERE pending=0').fetchone()[0]
     from account_scope import separate_accounts, SCOPES
     separate=separate_accounts(db)
     db.execute('CREATE TEMP TABLE IF NOT EXISTS separate_scope(ref TEXT PRIMARY KEY)')
@@ -95,9 +97,9 @@ def publish_merchants(db,out,today=None):
         hint_filter='' if scope=='all' else ' AND 0'
         for window,start,end,months in window_bounds(today,earliest):
             sql=f"""WITH eligible AS (
-              SELECT t.date,t.amount,t.currency,COALESCE(t.merchant,'Other') AS merchant,t.merchant_source FROM transactions t
+              SELECT COALESCE(web_date(t.id),t.date) AS date,t.amount,t.currency,COALESCE(t.merchant,'Other') AS merchant,t.merchant_source FROM transactions t
               JOIN items i ON i.id=t.item LEFT JOIN account_alias m ON m.item=t.item AND m.provider_ref=t.account LEFT JOIN account_alias u ON u.item=t.item AND u.provider_ref='virtual:'||t.item LEFT JOIN source_identity s ON s.provider_ref=t.item
-              WHERE t.pending=0 AND lower(i.institution) NOT LIKE '%venmo%' AND t.flow_kind='activity' AND t.primary_category!='INCOME' AND NOT EXISTS (SELECT 1 FROM internal_matches x WHERE x.item=t.item AND x.transaction_ref=t.id) AND t.date>=? AND t.date<? {excluded} {scope_filter}),
+              WHERE t.pending=0 AND lower(i.institution) NOT LIKE '%venmo%' AND t.flow_kind='activity' AND t.primary_category!='INCOME' AND NOT EXISTS (SELECT 1 FROM internal_matches x WHERE x.item=t.item AND x.transaction_ref=t.id) AND COALESCE(web_date(t.id),t.date)>=? AND COALESCE(web_date(t.id),t.date)<? {excluded} {scope_filter}),
               charges AS (SELECT *,julianday(date)-julianday(LAG(date) OVER(PARTITION BY merchant COLLATE NOCASE,currency ORDER BY date)) AS gap,
                 ROW_NUMBER() OVER(PARTITION BY merchant COLLATE NOCASE,currency ORDER BY amount) AS amount_rank,
                 COUNT(*) OVER(PARTITION BY merchant COLLATE NOCASE,currency) AS n FROM eligible WHERE amount>0),

@@ -62,7 +62,15 @@ class PlaidSource:
         missing=[{'account_id':a,'name':n,'type':t,'subtype':s} for a,n,t,s in old if not db.execute('SELECT 1 FROM account_alias WHERE provider_ref=? AND item=?',(a,self.key)).fetchone()]
         if missing: account_refs(db,self.key,missing)
         for a,n,t,s in old: db.execute('UPDATE accounts SET name=? WHERE id=?',((s or t).replace('_',' ').title(),a))
-        db.create_function('plaidmcp_category',2,category)
+        effective={}
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='effective_categories'").fetchone():
+            effective=dict(db.execute('SELECT id,category FROM effective_categories'))
+        if not db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='reporting_allocations'").fetchone():
+            db.execute('CREATE TEMP TABLE reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
+        db.create_function('plaidmcp_category',3,lambda primary,detail,tid:effective.get(tid,category(primary,detail)))
+        db.create_function('web_override',1,lambda tid:effective.get(tid))
+        from overrides import register_dates
+        register_dates(db)
         db.create_function('plaidmcp_detail',2,detailed)
         kinds=set()
         try: row=db.execute('SELECT product FROM credentials WHERE item=?',(self.key,)).fetchone()
@@ -88,10 +96,10 @@ class PlaidSource:
         unmatched=db.execute('SELECT 1 FROM transactions t LEFT JOIN account_alias m ON m.provider_ref=t.account AND m.item=t.item WHERE t.item=? AND m.ref IS NULL LIMIT 1',(self.key,)).fetchone()
         if unmatched: accounts.append((unknown,ref,'Unassigned activity '+unknown[-6:],institution,'other','unassigned activity','UNKNOWN',None,None,None,'',json.dumps(['spending']),'unassigned'))
         sql="""WITH normalized AS (
-            SELECT date AS day,COALESCE(m.ref,?) AS account_ref,
-              CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_category(primary_category,detailed_category) END AS category,
+            SELECT COALESCE(web_date(t.id),t.date) AS day,COALESCE(m.ref,?) AS account_ref,
+              COALESCE(alloc.category,web_override(t.id),CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_category(primary_category,detailed_category,t.id) END) AS category,
               CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE plaidmcp_detail(primary_category,detailed_category) END AS category_detailed,
-              t.currency,amount,primary_category,detailed_category FROM transactions t LEFT JOIN account_alias m
+              t.currency,COALESCE(alloc.amount,t.amount) AS amount,primary_category,detailed_category FROM transactions t LEFT JOIN reporting_allocations alloc ON alloc.id=t.id LEFT JOIN account_alias m
               ON m.provider_ref=t.account AND m.item=t.item LEFT JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id WHERE t.item=? AND pending=0)
             SELECT day,account_ref,?,category,category_detailed,currency,
               SUM(CASE WHEN category='income' THEN -amount ELSE 0 END),
@@ -125,14 +133,20 @@ class VenmoSource:
         if not row: return {}
         institution,as_of,error=row
         ref=source_ref(db,self.key); account=virtual_account(db,self.key,institution,'statement wallet')
-        sql="""SELECT date,?,?,CASE category WHEN 'peer_sent' THEN 'peer_payment' WHEN 'peer_received' THEN 'peer_payment' WHEN 'bank_transfer' THEN 'bank_transfer' WHEN 'fee' THEN 'fees' ELSE 'shopping' END,
-          CASE category WHEN 'fee' THEN 'general_fees' WHEN 'purchase' THEN 'general_shopping' ELSE category END,'USD',0,
-          SUM(CASE WHEN category IN ('purchase','fee') THEN CASE direction WHEN 'in' THEN -cents/100.0 ELSE cents/100.0 END ELSE 0 END),
+        normalized="""SELECT date,cents,direction,
+            CASE category WHEN 'peer_sent' THEN 'peer_payment' WHEN 'peer_received' THEN 'peer_payment' WHEN 'bank_transfer' THEN 'bank_transfer' WHEN 'fee' THEN 'fees' ELSE 'shopping' END AS category,
+            CASE category WHEN 'fee' THEN 'general_fees' WHEN 'purchase' THEN 'general_shopping' ELSE category END AS detailed_category FROM venmo_rows"""
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='reporting_venmo'").fetchone():normalized='SELECT * FROM reporting_venmo'
+        sql="""WITH normalized AS ("""+normalized+""") SELECT date,?,?,category,detailed_category,'USD',
+          SUM(CASE WHEN category='income' THEN CASE direction WHEN 'in' THEN cents/100.0 ELSE -cents/100.0 END ELSE 0 END),
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') THEN CASE direction WHEN 'in' THEN -cents/100.0 ELSE cents/100.0 END ELSE 0 END),
           SUM(CASE WHEN category='bank_transfer' AND direction='in' THEN cents/100.0 ELSE 0 END),
           SUM(CASE WHEN category='bank_transfer' AND direction='out' THEN cents/100.0 ELSE 0 END),
-          SUM(CASE WHEN category='peer_received' THEN cents/100.0 ELSE 0 END),
-          SUM(CASE WHEN category='peer_sent' THEN cents/100.0 ELSE 0 END),COUNT(*)
-          FROM venmo_rows GROUP BY date,category,direction"""
+          SUM(CASE WHEN category='peer_payment' AND direction='in' THEN cents/100.0 ELSE 0 END),
+          SUM(CASE WHEN category='peer_payment' AND direction='out' THEN cents/100.0 ELSE 0 END),COUNT(*),0,0,
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') AND direction='in' THEN cents/100.0 ELSE 0 END),
+          SUM(CASE WHEN category='income' THEN CASE direction WHEN 'in' THEN cents/100.0 ELSE -cents/100.0 END ELSE 0 END),0,0
+          FROM normalized GROUP BY date,category,detailed_category,direction"""
         return {'sources':[(ref,institution,'file_import',as_of,status(error,as_of),json.dumps(['spending']))],
           'accounts':[(account,ref,'Statement wallet '+account[-6:],institution,'other','wallet','USD',None,None,None,'',json.dumps(['spending']),'available')],
           'daily':db.execute(sql,(account,ref)).fetchall(),'holdings':[]}

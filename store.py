@@ -1,4 +1,4 @@
-"""Private ingestion and atomic publication. Only verified normalized business names are retained privately; no descriptions."""
+"""Private ingestion and atomic publication. Web-only detail is isolated from the aggregate projection."""
 import os
 import re
 import sqlite3
@@ -33,6 +33,8 @@ def connect(path):
     CREATE TABLE IF NOT EXISTS account_alias(provider_ref TEXT, item TEXT, ref TEXT, PRIMARY KEY(provider_ref,item));
     CREATE TABLE IF NOT EXISTS source_identity(provider_ref TEXT PRIMARY KEY, ref TEXT);
     """)
+    from detail import PRIVATE_SCHEMA
+    db.executescript(PRIVATE_SCHEMA)
     return db
 
 def fingerprint(value):
@@ -65,6 +67,8 @@ def account_refs(db, item, accounts):
 
 def ingest_accounts(db, item, accounts):
     account_refs(db,item,accounts)
+    from detail import ingest_accounts as ingest_web_accounts
+    ingest_web_accounts(db,accounts)
     db.execute('UPDATE accounts SET current=NULL,available=NULL,credit_limit=NULL,active=0 WHERE item=?',(item,))
     for a in accounts:
         b = a['balances']
@@ -103,12 +107,18 @@ def ingest_transactions(db, item, page):
                 (is_venmo and detailed in ('TRANSFER_IN_OTHER_TRANSFER','TRANSFER_OUT_OTHER_TRANSFER','UNKNOWN'))):
             detailed = primary + '_PEER_TRANSFER'
         if detailed.endswith(('_PEER_TRANSFER','_PEER_TO_PEER')):flow_kind='peer_payment'
+        from detail import ingest_transactions as ingest_web_transactions
+        ingest_web_transactions(db,item,{'added':[t]},bool(is_venmo))
         db.execute("INSERT OR REPLACE INTO transactions(id,item,date,primary_category,detailed_category,currency,amount,pending,account,merchant,merchant_source,flow_kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (t['transaction_id'], item,
             t['date'], primary, detailed, t.get('iso_currency_code') or t.get('unofficial_currency_code') or 'UNKNOWN', t['amount'], bool(t.get('pending')),t.get('account_id'),merchant,merchant_source,flow_kind))
+    from detail import ingest_transactions as ingest_web_transactions
+    ingest_web_transactions(db,item,{'removed':page.get('removed',[])},False)
     for t in page.get('removed', []):
         db.execute("DELETE FROM transactions WHERE id=? AND item=?", (t['transaction_id'],item))
 
 def ingest_holdings(db, item, data):
+    from detail import ingest_holdings as ingest_web_holdings
+    ingest_web_holdings(db,item,data)
     securities = {s['security_id']:s for s in data['securities']}
     db.execute("DELETE FROM holdings WHERE item=?", (item,))
     for h in data['holdings']:
@@ -116,6 +126,19 @@ def ingest_holdings(db, item, data):
         db.execute("INSERT INTO holdings VALUES(?,?,?,?,?,?,?,?,?)", (item,h['account_id'],s.get('ticker_symbol'),s.get('name'),s.get('type','unknown'),h.get('iso_currency_code') or h.get('unofficial_currency_code') or 'UNKNOWN',h['quantity'],h['institution_value'],h.get('cost_basis')))
 
 def publish(db, path, sources=None):
+    from overrides import reporting_store
+    from transfers import match_internal
+    match_internal(db)
+    # Allocate identities in persistent sync state before the reporting copy.
+    # A newly linked source must have the same opaque identity in both outputs.
+    from sources import source_ref,virtual_account
+    for key,institution in db.execute('SELECT id,institution FROM items').fetchall():
+        source_ref(db,key)
+        virtual_account(db,key,institution,'statement wallet' if key=='venmo-csv' else 'unassigned activity')
+    with reporting_store(db,os.environ.get("MONEY_APP_DB")) as effective:
+        return _publish(effective,path,sources)
+
+def _publish(db, path, sources=None):
     """Publish only the common source interface; no provider fields in public schemas."""
     from sources import snapshot_sources, PUBLIC_SCHEMA
     from transfers import match_internal
@@ -144,6 +167,9 @@ def publish(db, path, sources=None):
         separate=separate_accounts(db)
         out.execute("ALTER TABLE accounts ADD COLUMN scope TEXT NOT NULL DEFAULT 'own'")
         out.executemany("UPDATE accounts SET scope='separate' WHERE id=?",[(ref,) for ref in separate])
+        out.execute('ALTER TABLE accounts ADD COLUMN exclude_net_worth INTEGER NOT NULL DEFAULT 0')
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='networth_exclusions'").fetchone():
+            out.executemany('UPDATE accounts SET exclude_net_worth=1 WHERE id=?',db.execute('SELECT account_id FROM networth_exclusions'))
         publish_merchants(db,out)
         out.commit(); out.close()
         os.chmod(temp,0o640)

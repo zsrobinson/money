@@ -1,0 +1,13 @@
+@import "@zsrobinson/shell/styles.css";
+
+/* Scan this app's own sources too. */
+@source "./";
+
+/*
+ * Spending and losses are the same red in both themes, on charts and text
+ * alike, so a bar reads as the figure beside it.
+ */
+:root,
+.dark {
+  --chart-negative: var(--flexoki-red-400);
+}

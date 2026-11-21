@@ -4,7 +4,7 @@ from pathlib import Path
 
 PHASE='starting'
 MATCH={}
-BANNED={'transaction_id','account_id','item_id','merchant_name','description','original_description','counterparties','note','notes','payment_note','payment_notes','username','user_name','routing_number','account_number','owners','owner_name','addresses','emails','phones','access_token','public_token','raw_descriptor','bank_description'}
+BANNED={'official_name','authorized_date','website','logo_url','pfc_confidence','payment_channel','tags','transaction_id','account_id','item_id','merchant_name','description','original_description','counterparties','note','notes','payment_note','payment_notes','username','user_name','routing_number','account_number','owners','owner_name','addresses','emails','phones','access_token','public_token','raw_descriptor','bank_description'}
 
 
 def check(value,strings,**context):
@@ -25,6 +25,13 @@ def check_fields(value):
 
 
 def audit_snapshot(public,private,private_strings,strict_strings,approved_business):
+    from overrides import reporting_store
+    with reporting_store(private,os.environ.get("MONEY_APP_DB")) as effective:
+        from transfers import match_internal
+        if effective is not private:match_internal(effective)
+        return _audit_snapshot(public,effective,private_strings,strict_strings,approved_business)
+
+def _audit_snapshot(public,private,private_strings,strict_strings,approved_business):
     """Never emit source strings; validate fields, SQL folding, bytes and every tool."""
     global PHASE
     from merchants import MERCHANT_SCHEMA,publish_merchants
@@ -53,9 +60,22 @@ def audit_snapshot(public,private,private_strings,strict_strings,approved_busine
             OR ABS(julianday(a.date)-julianday(b.date))>3''').fetchone()[0]
         if invalid:raise ValueError('Invalid internal transfer match')
         if db.execute("SELECT COUNT(*) FROM daily WHERE category='internal_transfer' AND (income!=0 OR spending!=0 OR transfer_in!=0 OR transfer_out!=0 OR peer_in!=0 OR peer_out!=0)").fetchone()[0]:raise ValueError('Internal transfer entered income or spending')
-        for currency,incoming,outgoing in private.execute('''SELECT t.currency,
-            ROUND(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),2),ROUND(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),2)
-            FROM transactions t JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id GROUP BY t.currency'''):
+        # Apply the same safe reporting allocations before checking internal
+        # totals. A user's explicit reclassification/split is not a pairing bug.
+        private.execute('CREATE TEMP TABLE IF NOT EXISTS effective_categories(id TEXT PRIMARY KEY,category TEXT)')
+        private.execute('CREATE TEMP TABLE IF NOT EXISTS reporting_allocations(id TEXT,category TEXT,amount REAL,PRIMARY KEY(id,category))')
+        disabled=list(filter(None,os.environ.get('PLAIDMCP_DISABLED_SOURCES','').split(',')))
+        exclusion=' AND COALESCE(s.ref,\'\') NOT IN ('+','.join('?' for _ in disabled)+')' if disabled else ''
+        expected_internal=private.execute('''WITH normalized AS (
+            SELECT t.currency,COALESCE(alloc.amount,t.amount) AS amount,
+              COALESCE(alloc.category,ec.category,CASE WHEN x.transaction_ref IS NOT NULL THEN 'internal_transfer' ELSE '' END) AS category
+            FROM transactions t LEFT JOIN internal_matches x ON x.item=t.item AND x.transaction_ref=t.id
+            LEFT JOIN effective_categories ec ON ec.id=t.id LEFT JOIN reporting_allocations alloc ON alloc.id=t.id
+            LEFT JOIN source_identity s ON s.provider_ref=t.item WHERE t.pending=0'''+exclusion+''')
+            SELECT currency,ROUND(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),2),
+            ROUND(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),2)
+            FROM normalized WHERE category='internal_transfer' GROUP BY currency''',disabled).fetchall()
+        for currency,incoming,outgoing in expected_internal:
             actual=db.execute('SELECT ROUND(COALESCE(SUM(internal_in),0),2),ROUND(COALESCE(SUM(internal_out),0),2) FROM daily WHERE currency=?',(currency,)).fetchone()
             if actual!=(incoming,outgoing):raise ValueError('Internal transfer aggregate mismatch')
         minimum=max(2,int(os.environ.get('PLAIDMCP_MIN_GROUP_COUNT','1')))
@@ -159,12 +179,18 @@ def main():
     original_client=sync.Client;sync.Client=Audited
     fd,temporary=tempfile.mkstemp(dir=public.parent,prefix='.audit-');os.close(fd)
     candidate=Path(temporary);previous=os.environ.get('PLAIDMCP_PUBLIC')
+    detail_target=os.environ.get('MONEY_DETAIL_DB');detail_candidate=None
+    if detail_target:
+        fd,name=tempfile.mkstemp(dir=Path(detail_target).parent,prefix='.audit-detail-');os.close(fd)
+        detail_candidate=Path(name)
+        os.environ['MONEY_DETAIL_DB']=str(detail_candidate)
     try:
         os.environ['PLAIDMCP_PUBLIC']=str(candidate)
         PHASE='sync';sync.main()
         PHASE='full_history_audit';audit_client=Audited()
         with sqlite3.connect((private_root/'private.sqlite').as_uri()+'?mode=ro',uri=True) as private:
-            tokens=private.execute('SELECT token,product FROM credentials').fetchall()
+            from sources import enabled
+            tokens=[(token,product) for item,token,product in private.execute('SELECT item,token,product FROM credentials') if enabled(private,item)]
             for token,products in tokens:
                 if 'transactions' not in products.split(','):continue
                 cursor=None
@@ -176,13 +202,16 @@ def main():
                     cursor=page['next_cursor']
                 else:raise ValueError('Audit pagination limit')
             sources,healthy,accounts=audit_snapshot(candidate,private,captured,strict,approved)
-            failures=private.execute('SELECT COUNT(*) FROM items WHERE error IS NOT NULL OR as_of IS NULL').fetchone()[0]
-            history={institution:month for institution,month in private.execute('SELECT i.institution,MIN(substr(t.date,1,7)) FROM items i LEFT JOIN transactions t ON t.item=i.id AND t.pending=0 GROUP BY i.id')}
+            failures=sum(1 for item,as_of,error in private.execute('SELECT id,as_of,error FROM items') if enabled(private,item) and (error is not None or as_of is None))
         if failures or healthy!=sources:raise ValueError('Source health gate failed; prior snapshot retained')
-        PHASE='publication';os.replace(candidate,public)
-        print(json.dumps({'privacy_passed':True,'linked_items':len(tokens),'sources':sources,'healthy_sources':healthy,'accounts':accounts,'ready_for_timer':bool(tokens and healthy==sources and not failures and accounts),'history_earliest_month':history,'recurring_provider_available':any(recurring_support)}))
+        PHASE='publication'
+        if detail_candidate:os.replace(detail_candidate,detail_target)
+        os.replace(candidate,public)
+        print(json.dumps({'privacy_passed':True,'linked_items':len(tokens),'sources':sources,'healthy_sources':healthy,'accounts':accounts,'ready_for_timer':bool(tokens and healthy==sources and not failures and accounts),'recurring_provider_available':any(recurring_support)}))
     finally:
         sync.Client=original_client;candidate.unlink(missing_ok=True)
+        if detail_candidate:detail_candidate.unlink(missing_ok=True)
+        if detail_target:os.environ['MONEY_DETAIL_DB']=detail_target
         if previous is None:os.environ.pop('PLAIDMCP_PUBLIC',None)
         else:os.environ['PLAIDMCP_PUBLIC']=previous
 

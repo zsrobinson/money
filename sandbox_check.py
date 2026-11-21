@@ -34,6 +34,8 @@ def configure():
     values = dict(line.split('=',1) for line in ENV.read_text().splitlines() if line)
     if set(values) != {'PLAID_ENV','PLAID_CLIENT_ID','PLAID_SECRET'} or values['PLAID_ENV'] != 'sandbox':
         raise ValueError('Exact Sandbox configuration required')
+    for key in list(os.environ):
+        if key.startswith('MONEY_'):os.environ.pop(key)
     os.environ.update(values)
     os.umask(0o077)
     ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -199,15 +201,17 @@ async def check_mcp(run, client):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
     # No Plaid credentials are inherited by the separate server process.
-    env = {k:v for k,v in os.environ.items() if not k.startswith(('PLAID_','ACCESS_'))}
-    with socket.socket() as probe: probe.bind(('127.0.0.1',8767))
-    process = subprocess.Popen([sys.executable,'server.py'],cwd=Path(__file__).parent,
+    env = {k:v for k,v in os.environ.items() if not k.startswith(('PLAID_','ACCESS_','MONEY_'))}
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1',0)); port=probe.getsockname()[1]
+    launcher="import uvicorn;from server import create_app;uvicorn.run(create_app(),host='127.0.0.1',port="+str(port)+",access_log=False,log_level='error')"
+    process = subprocess.Popen([sys.executable,'-c',launcher],cwd=Path(__file__).parent,
         env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
             if process.poll() is not None: raise CheckError('Local MCP startup failed')
             try:
-                with socket.create_connection(('127.0.0.1',8767),timeout=.2): break
+                with socket.create_connection(('127.0.0.1',port),timeout=.2): break
             except OSError: await asyncio.sleep(.05)
         else: raise CheckError('Local MCP startup timed out')
         with sync.private_store() as db:
@@ -215,7 +219,7 @@ async def check_mcp(run, client):
         start,end=month_bounds(month)
         args={'cash_flow':{'start':start,'end':end}}
         samples = {}
-        async with streamable_http_client('http://127.0.0.1:8767/mcp') as (read,write,_):
+        async with streamable_http_client(f'http://127.0.0.1:{port}/mcp') as (read,write,_):
             async with ClientSession(read,write) as session:
                 await session.initialize()
                 if {t.name for t in (await session.list_tools()).tools} != set(TOOLS):
