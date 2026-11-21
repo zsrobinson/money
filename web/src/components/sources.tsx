@@ -3,19 +3,16 @@ import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { RefreshCwIcon } from "lucide-react"
 import { Loading } from "@/components/money"
-import { pluralize } from "@/lib/format"
+import { pluralize, syncLabel } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { metaQuery } from "@/lib/queries"
 import type { Source } from "@/lib/types"
 
-const STATUS: Record<
-  string,
-  { label: string; variant: "secondary" | "destructive" | "outline" }
-> = {
-  healthy: { label: "Up to date", variant: "secondary" },
-  stale: { label: "Behind", variant: "destructive" },
-  error: { label: "Failing", variant: "destructive" },
-  disabled: { label: "Paused", variant: "outline" },
+const VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
+  healthy: "secondary",
+  stale: "destructive",
+  error: "destructive",
+  disabled: "outline",
 }
 
 const when = (iso: string) =>
@@ -38,16 +35,17 @@ export function SourceList() {
 }
 
 function SourceRow({ source: s }: { source: Source }) {
-  const status = STATUS[s.status] ?? STATUS.error
   const sync = useSend("POST", `/api/sources/${s.id}/sync`, {
     success: `Sync requested for ${s.institution}`,
   })
   const needsSync = s.status === "stale" || s.status === "error"
   return (
     <li className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-2">
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">{s.institution}</span>
-        <span className="truncate text-xs text-muted-foreground">
+      {/* On a phone the status and action drop below the full name. */}
+      <span className="flex min-w-0 flex-1 basis-full flex-col sm:basis-auto">
+        <span className="text-sm font-medium">{s.institution}</span>
+        {/* Wraps on a phone so "last synced" is never cut off. */}
+        <span className="text-xs text-muted-foreground">
           {pluralize(s.accounts, "account")} ·{" "}
           {s.lastSuccessAt
             ? `last synced ${when(s.lastSuccessAt)}`
@@ -57,7 +55,9 @@ function SourceRow({ source: s }: { source: Source }) {
             : ""}
         </span>
       </span>
-      <Badge variant={status.variant}>{status.label}</Badge>
+      <Badge variant={VARIANT[s.status] ?? "destructive"}>
+        {syncLabel(s.status)}
+      </Badge>
       {needsSync ? (
         <Button
           size="sm"

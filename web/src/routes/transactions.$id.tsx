@@ -53,7 +53,7 @@ import {
   useCategoryLabels,
 } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
-import { longDate, money, shortDate, titleCase } from "@/lib/format"
+import { longDate, money, sentenceCase, shortDate } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { categoriesQuery, tagsQuery, transactionQuery } from "@/lib/queries"
 import type { Split, TxnDetail } from "@/lib/types"
@@ -116,13 +116,7 @@ function SaveState({
         failed ? "text-xs text-negative" : "text-xs text-muted-foreground"
       }
     >
-      {pending
-        ? "Saving…"
-        : failed
-          ? "Not saved"
-          : saved
-            ? "Saved"
-            : "Changes save as you go"}
+      {pending ? "Saving…" : failed ? "Not saved" : saved ? "Saved" : null}
     </span>
   )
 }
@@ -135,6 +129,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
     "PATCH",
     `/api/transactions/${t.id}`
   )
+  const [splitting, setSplitting] = useState(false)
   const [merchant, setMerchant] = useState(t.merchant ?? "")
   const [note, setNote] = useState(t.note ?? "")
   const saveMerchant = () => {
@@ -226,42 +221,44 @@ function TransactionView({ t }: { t: TxnDetail }) {
                     Split · {t.splits.length} categories
                   </a>
                 ) : (
-                  <CategorySelect
-                    id="txn-category"
-                    categories={categories.data ?? []}
-                    value={t.category}
-                    disabled={patch.isPending}
-                    onChange={(code) =>
-                      patch.mutate({
-                        category:
-                          code === t.original.category &&
-                          !t.rules.some((r) => r.action.category)
-                            ? null
-                            : code,
-                      })
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <CategorySelect
+                      id="txn-category"
+                      categories={categories.data ?? []}
+                      value={t.category}
+                      disabled={patch.isPending}
+                      onChange={(code) =>
+                        patch.mutate({
+                          category:
+                            code === t.original.category &&
+                            !t.rules.some((r) => r.action.category)
+                              ? null
+                              : code,
+                        })
+                      }
+                    />
+                    <Button
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => setSplitting(true)}
+                    >
+                      <SplitIcon data-icon="inline-start" />
+                      Split
+                    </Button>
+                  </div>
                 )}
-                <FieldDescription>
-                  {t.splits.length ? (
-                    "Each part counts under its own category."
-                  ) : t.overridden.category ? (
-                    <>
-                      Set by you. Originally {label(t.original.category)}.{" "}
-                      <button
-                        type="button"
-                        className="underline underline-offset-4"
-                        onClick={() => patch.mutate({ category: null })}
-                      >
-                        Restore
-                      </button>
-                    </>
-                  ) : t.rules.some((r) => r.action.category) ? (
-                    "Set by a rule."
-                  ) : (
-                    "From your bank."
-                  )}
-                </FieldDescription>
+                {!t.splits.length && t.overridden.category ? (
+                  <FieldDescription>
+                    Originally {label(t.original.category)}.{" "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-4"
+                      onClick={() => patch.mutate({ category: null })}
+                    >
+                      Restore
+                    </button>
+                  </FieldDescription>
+                ) : null}
               </Field>
               <div className="grid gap-4 @lg:grid-cols-2">
                 <Field>
@@ -359,23 +356,6 @@ function TransactionView({ t }: { t: TxnDetail }) {
               </Field>
             </FieldGroup>
           </SectionCard>
-          <SplitEditor t={t} />
-          {t.similar.length ? (
-            <SectionCard
-              title="Other transactions here"
-              flush
-              action={
-                <CardLink
-                  to="/reports/merchants/$key"
-                  params={{ key: t.merchantKey }}
-                >
-                  Merchant report
-                </CardLink>
-              }
-            >
-              <TxnRows items={t.similar} showAccount={false} />
-            </SectionCard>
-          ) : null}
         </PageStack>
         <PageStack>
           <SectionCard title="From the bank">
@@ -398,7 +378,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
               </DetailRow>
               <DetailRow label="Channel">
                 {t.paymentChannel ? (
-                  titleCase(t.paymentChannel)
+                  sentenceCase(t.paymentChannel)
                 ) : (
                   <Unavailable />
                 )}
@@ -406,6 +386,13 @@ function TransactionView({ t }: { t: TxnDetail }) {
               <DetailRow label="Type">{kindOf(t)}</DetailRow>
             </DetailList>
           </SectionCard>
+          {t.splits.length || splitting ? (
+            <SplitEditor
+              t={t}
+              editing={splitting}
+              onEditingChange={setSplitting}
+            />
+          ) : null}
           {t.pair ? (
             <SectionCard title="Matching transfer" flush>
               <TxnRows items={[t.pair]} />
@@ -450,21 +437,42 @@ function TransactionView({ t }: { t: TxnDetail }) {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No rules apply. Create one to handle transactions like this
-                automatically.
-              </p>
+              <p className="text-sm text-muted-foreground">No rules apply.</p>
             )}
           </SectionCard>
         </PageStack>
       </PageGrid>
+      {t.similar.length ? (
+        <SectionCard
+          title="Other transactions here"
+          flush
+          action={
+            <CardLink
+              to="/reports/merchants/$key"
+              params={{ key: t.merchantKey }}
+            >
+              Merchant report
+            </CardLink>
+          }
+        >
+          <TxnRows items={t.similar} showAccount={false} />
+        </SectionCard>
+      ) : null}
     </Page>
   )
 }
 
 type Draft = { amount: string; category: string; note: string }
 
-function SplitEditor({ t }: { t: TxnDetail }) {
+function SplitEditor({
+  t,
+  editing,
+  onEditingChange: setEditing,
+}: {
+  t: TxnDetail
+  editing: boolean
+  onEditingChange: (editing: boolean) => void
+}) {
   const categories = useQuery(categoriesQuery)
   const sign = Math.sign(t.amountCents) || -1
   const fromSplits = (s: Split[]): Draft[] =>
@@ -473,8 +481,19 @@ function SplitEditor({ t }: { t: TxnDetail }) {
       category: x.category,
       note: x.note ?? "",
     }))
-  const [drafts, setDrafts] = useState<Draft[]>(() => fromSplits(t.splits))
-  const [editing, setEditing] = useState(false)
+  const half = Math.floor(Math.abs(t.amountCents) / 2)
+  const [drafts, setDrafts] = useState<Draft[]>(() =>
+    t.splits.length
+      ? fromSplits(t.splits)
+      : [
+          {
+            amount: ((Math.abs(t.amountCents) - half) / 100).toFixed(2),
+            category: t.category,
+            note: "",
+          },
+          { amount: (half / 100).toFixed(2), category: t.category, note: "" },
+        ]
+  )
   const save = useSend<{
     splits: { amountCents: number; category: string; note: string | null }[]
   }>("PUT", `/api/transactions/${t.id}/splits`, {
@@ -489,19 +508,7 @@ function SplitEditor({ t }: { t: TxnDetail }) {
     cents.every((c) => c > 0) &&
     drafts.every((d) => d.category)
   const start = () => {
-    const half = Math.floor(Math.abs(t.amountCents) / 2)
-    setDrafts(
-      t.splits.length
-        ? fromSplits(t.splits)
-        : [
-            {
-              amount: ((Math.abs(t.amountCents) - half) / 100).toFixed(2),
-              category: t.category,
-              note: "",
-            },
-            { amount: (half / 100).toFixed(2), category: t.category, note: "" },
-          ]
-    )
+    setDrafts(fromSplits(t.splits))
     setEditing(true)
   }
   const update = (i: number, patch: Partial<Draft>) =>
@@ -513,7 +520,7 @@ function SplitEditor({ t }: { t: TxnDetail }) {
           title="Split"
           action={
             <Button size="sm" variant="outline" onClick={start}>
-              {t.splits.length ? "Edit split" : "Split transaction"}
+              Edit split
             </Button>
           }
         >
@@ -538,12 +545,7 @@ function SplitEditor({ t }: { t: TxnDetail }) {
                 </DetailRow>
               ))}
             </DetailList>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Divide this amount across categories, for example groceries and
-              household items from one receipt.
-            </p>
-          )}
+          ) : null}
         </SectionCard>
       ) : (
         <SectionCard title="Split">

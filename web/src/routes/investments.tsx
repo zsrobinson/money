@@ -37,7 +37,6 @@ import {
   money,
   moneyTick,
   percent,
-  timeTick,
 } from "@/lib/format"
 import { investmentsQuery } from "@/lib/queries"
 import type { Holding, Range } from "@/lib/types"
@@ -105,13 +104,16 @@ function Investments() {
               <Amount cents={d.gainCents} tone="signed" whole />
             </Stat>
             {first != null && last != null ? (
-              <Stat label="Change in range" detail="includes contributions">
+              <Stat
+                label="Change in range"
+                info="Includes money you added or withdrew, not only market gains."
+              >
                 <Amount cents={last - first} tone="signed" whole />
               </Stat>
             ) : null}
           </StatRow>
           <PageGrid layout="wide" className="items-stretch">
-            <SectionCard title="Value over time" className="h-full">
+            <SectionCard title="Value over time" fill>
               <TrendChart
                 label="Investment value over time"
                 baseline="data"
@@ -120,11 +122,11 @@ function Investments() {
                 format={(v) => money(Math.round(v * 100), { whole: true })}
                 formatTick={moneyTick}
                 formatTime={epochFullDate}
-                formatTimeTick={timeTick(points)}
-                className="h-60"
+                utc
+                className="h-full min-h-60"
               />
             </SectionCard>
-            <SectionCard title="Allocation" className="h-full">
+            <SectionCard title="Allocation" fill>
               <DonutChart
                 label="Allocation by asset type"
                 totalLabel="invested"
@@ -190,7 +192,7 @@ function Investments() {
                               <span className="truncate font-medium">
                                 {h.ticker ?? h.name}
                               </span>
-                              <span className="truncate text-xs text-muted-foreground">
+                              <span className="text-xs whitespace-normal text-muted-foreground">
                                 {h.ticker ? h.name : assetType(h.type)}
                               </span>
                             </span>

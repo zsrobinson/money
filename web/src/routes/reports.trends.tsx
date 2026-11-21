@@ -14,7 +14,7 @@ import {
 } from "@zsrobinson/shell/ui/table"
 import { z } from "zod"
 import { Amount, Loading, RangeSelect, SectionCard } from "@/components/money"
-import { rangeMonths, ReportNav } from "@/components/report-nav"
+import { ReportNav } from "@/components/report-nav"
 import { usePageTitle } from "@/lib/crumb"
 import {
   epochMonthYear,
@@ -24,19 +24,14 @@ import {
   monthShortYear,
   percent,
 } from "@/lib/format"
-import { metaQuery, trendsQuery } from "@/lib/queries"
+import { trendsQuery } from "@/lib/queries"
 import type { Range } from "@/lib/types"
 
 export const Route = createFileRoute("/reports/trends")({
   validateSearch: z.object({
     range: z.enum(["1m", "3m", "6m", "ytd", "1y", "all"]).optional(),
   }),
-  staticData: {
-    crumbs: [
-      { label: "Reports", to: "/reports" },
-      { label: "Trends", to: "/reports/trends" },
-    ],
-  },
+  staticData: { crumbs: [{ label: "Reports", to: "/reports" }] },
   component: Trends,
 })
 
@@ -46,17 +41,11 @@ function Trends() {
   usePageTitle("Trends")
   const { range = "6m" } = Route.useSearch()
   const navigate = useNavigate({ from: "/reports/trends" })
-  const today = useQuery(metaQuery).data?.today ?? ""
-  const q = useQuery({
-    ...trendsQuery(rangeMonths(range, today)),
-    enabled: Boolean(today),
-  })
+  const q = useQuery(trendsQuery(range))
   const d = q.data
   const n = (row: Record<string, number | string>, key: string) =>
     Number(row[key] ?? 0)
-  const current = today.slice(0, 7)
-  // The current month is still filling up; charts show full months only.
-  const full = (d?.rows ?? []).filter((r) => r.month !== current)
+  const rows = d?.rows ?? []
   return (
     <Page>
       <PageHeader>
@@ -86,8 +75,8 @@ function Trends() {
             <TrendChart
               kind="bar"
               stacked
-              label="Monthly spending stacked by the four largest categories, full months"
-              data={full.map((r) => ({
+              label="Monthly spending stacked by the four largest categories"
+              data={rows.map((r) => ({
                 time: monthEpoch(String(r.month)),
                 ...Object.fromEntries([
                   ...d.categories.map((c) => [c.code, n(r, c.code) / 100]),
@@ -115,8 +104,8 @@ function Trends() {
           <SectionCard title="Income against spending">
             <TrendChart
               curve="linear"
-              label="Monthly income and spending, full months"
-              data={full.map((r) => ({
+              label="Monthly income and spending"
+              data={rows.map((r) => ({
                 time: monthEpoch(String(r.month)),
                 income: n(r, "incomeCents") / 100,
                 spending: n(r, "spendingCents") / 100,
@@ -130,9 +119,6 @@ function Trends() {
               formatTime={epochMonthYear}
               className="h-56"
             />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Charts show full months; the table includes this month so far.
-            </p>
           </SectionCard>
           <Card className="gap-0 overflow-x-auto py-0">
             <Table>
@@ -160,11 +146,6 @@ function Trends() {
                   <TableRow key={String(r.month)}>
                     <TableCell className="pl-5 whitespace-nowrap">
                       {monthShortYear(String(r.month))}
-                      {r.month === current ? (
-                        <span className="ml-1.5 text-xs text-muted-foreground">
-                          so far
-                        </span>
-                      ) : null}
                     </TableCell>
                     {d.categories.map((c) => (
                       <TableCell

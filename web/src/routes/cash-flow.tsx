@@ -51,6 +51,7 @@ export const Route = createFileRoute("/cash-flow")({
 })
 
 const whole = (d: number) => money(Math.round(d * 100), { whole: true })
+const FULL_MONTHS = "Per full month shown; this month counts once it is over."
 
 function CashFlow() {
   usePageTitle("Cash flow")
@@ -64,6 +65,7 @@ function CashFlow() {
     full.length
       ? Math.round(full.reduce((sum, f) => sum + f[key], 0) / full.length)
       : 0
+  const current = d?.months.at(-1)?.month ?? ""
   const income = full.reduce((sum, f) => sum + f.incomeCents, 0)
   const saved = full.reduce((sum, f) => sum + f.netCents, 0)
   return (
@@ -103,16 +105,19 @@ function CashFlow() {
       ) : (
         <PageStack>
           <StatRow>
-            <Stat label="Average income" detail="per full month">
+            <Stat label="Average income" info={FULL_MONTHS}>
               <Amount cents={avg("incomeCents")} tone="plain" whole />
             </Stat>
-            <Stat label="Average spending" detail="per full month">
+            <Stat label="Average spending" info={FULL_MONTHS}>
               <Amount cents={avg("spendingCents")} tone="plain" whole />
             </Stat>
-            <Stat label="Average saved" detail="per full month">
+            <Stat label="Average saved" info={FULL_MONTHS}>
               <Amount cents={avg("netCents")} tone="signed" whole />
             </Stat>
-            <Stat label="Savings rate" detail="of income kept">
+            <Stat
+              label="Savings rate"
+              info="The share of income kept over the full months shown."
+            >
               {income > 0 ? percent(saved / income) : "—"}
             </Stat>
           </StatRow>
@@ -132,7 +137,13 @@ function CashFlow() {
               }}
               format={whole}
               formatTick={moneyTick}
-              formatTime={epochMonthYear}
+              formatTime={(t) =>
+                t === monthEpoch(current)
+                  ? `${epochMonthYear(t)} so far`
+                  : epochMonthYear(t)
+              }
+              formatTimeTick={epochMonthYear}
+              markers={[{ time: monthEpoch(current), label: "So far" }]}
               className="h-64"
             />
           </SectionCard>
@@ -209,16 +220,28 @@ function CashFlow() {
   )
 }
 
+/** Shares of the month: parents include the categories inside them, which sit indented below. */
 function Breakdown({
   title,
   rows,
   link = "category",
 }: {
   title: string
-  rows: { code: string; label: string; cents: number; count: number }[]
+  rows: {
+    code: string
+    label: string
+    cents: number
+    count: number
+    parent?: string | null
+  }[]
   link?: "category" | "merchant"
 }) {
-  const total = rows.reduce((s, r) => s + Math.max(0, r.cents), 0)
+  const tops = rows.filter((r) => !r.parent)
+  const ordered = tops.flatMap((r) => [
+    r,
+    ...rows.filter((x) => x.parent === r.code),
+  ])
+  const total = tops.reduce((s, r) => s + Math.max(0, r.cents), 0)
   return (
     <SectionCard
       title={title}
@@ -228,10 +251,10 @@ function Breakdown({
         </span>
       }
     >
-      {rows.length ? (
+      {ordered.length ? (
         <ul className="flex flex-col gap-3">
-          {rows.map((r) => (
-            <li key={r.code}>
+          {ordered.map((r) => (
+            <li key={r.code} className={r.parent ? "pl-4" : undefined}>
               <Link
                 to={
                   link === "merchant"
@@ -244,7 +267,11 @@ function Breakdown({
                 className="flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex justify-between gap-3 text-sm">
-                  <span className="truncate">{r.label}</span>
+                  <span
+                    className={`truncate ${r.parent ? "text-muted-foreground" : ""}`}
+                  >
+                    {r.label}
+                  </span>
                   <span className="tabular-nums">
                     {money(r.cents, { whole: true })}
                   </span>

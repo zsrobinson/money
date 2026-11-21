@@ -25,7 +25,6 @@ import {
   money,
   moneyTick,
   percent,
-  timeTick,
 } from "@/lib/format"
 import { goalQuery, metaQuery } from "@/lib/queries"
 import type { Goal } from "@/lib/types"
@@ -151,18 +150,25 @@ function GoalPage() {
                 },
               }}
               dashed={["projection"]}
+              // Labels sit at the left, clear of the projection's last stretch.
               references={[
                 g.kind === "payoff"
-                  ? { value: 0, label: "Paid off" }
+                  ? { value: 0, label: "Paid off", side: "left" }
                   : {
                       value: g.targetCents / 100,
                       label: `Target ${money(g.targetCents, { whole: true })}`,
+                      side: "left",
                     },
               ]}
+              markers={
+                g.targetDate
+                  ? [{ time: epoch(g.targetDate), label: "Target date" }]
+                  : []
+              }
               format={(v) => money(Math.round(v * 100), { whole: true })}
               formatTick={moneyTick}
               formatTime={epochFullDate}
-              formatTimeTick={timeTick(points)}
+              utc
               className="mt-4 h-56"
             />
           </SectionCard>
@@ -188,7 +194,9 @@ function GoalPage() {
                 {g.progress >= 1 ? (
                   "Nothing"
                 ) : needed != null ? (
-                  `${money(needed, { whole: true })} to finish by ${fullDate(g.targetDate!)}`
+                  <span className="whitespace-nowrap">
+                    {money(needed, { whole: true })}
+                  </span>
                 ) : (
                   <Unavailable>Set a target date</Unavailable>
                 )}

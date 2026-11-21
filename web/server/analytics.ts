@@ -54,6 +54,41 @@ export function rangeStart(range: Range, today: string, earliest: string) {
   return start < earliest ? earliest : start
 }
 
+/**
+ * Reports cover whole calendar months, ending with the last full month, so a
+ * range means the same months on every report. The month in progress is left
+ * out; `previous` is the same number of months just before.
+ */
+export function reportPeriod(range: Range, today: string, earliest: string) {
+  const last = addMonths(monthOf(today), -1)
+  const first =
+    range === "1m"
+      ? last
+      : range === "3m"
+        ? addMonths(last, -2)
+        : range === "6m"
+          ? addMonths(last, -5)
+          : range === "1y"
+            ? addMonths(last, -11)
+            : range === "ytd"
+              ? // January has no full month yet this year; show December.
+                `${today.slice(0, 4)}-01` > last
+                ? last
+                : `${today.slice(0, 4)}-01`
+              : monthOf(earliest) < last
+                ? monthOf(earliest)
+                : last
+  const months = monthsBetween(first, last)
+  const prevLast = addMonths(first, -1)
+  const prevFirst = addMonths(first, -months.length)
+  return {
+    months,
+    from: `${first}-01`,
+    to: monthEnd(last),
+    previous: { from: `${prevFirst}-01`, to: monthEnd(prevLast) },
+  }
+}
+
 /** Last known balance on or before each date (forward fill), sampled. */
 function balanceAt(history: { date: string; cents: number }[]) {
   let i = 0
@@ -164,6 +199,38 @@ export function monthlyFlows(
   }
   for (const f of flows) f.netCents = f.incomeCents - f.spendingCents
   return flows
+}
+
+/**
+ * A parent category's figure always includes the categories inside it; each
+ * child keeps its own. Sum only the top-level rows so each dollar counts once.
+ */
+export function withChildren(
+  c: Computed,
+  own: Map<string, { cents: number; count: number }>
+) {
+  const out = new Map<string, { cents: number; count: number }>()
+  const add = (code: string, t: { cents: number; count: number }) => {
+    const r = out.get(code) ?? { cents: 0, count: 0 }
+    r.cents += t.cents
+    r.count += t.count
+    out.set(code, r)
+  }
+  for (const [code, t] of own) {
+    add(code, t)
+    const parent = c.category(code).parent
+    if (parent) add(parent, t)
+  }
+  return out
+}
+/** The sum of top-level categories only, so children are not counted twice. */
+export function topLevelSum(
+  c: Computed,
+  totals: Map<string, { cents: number }>
+) {
+  let sum = 0
+  for (const [code, t] of totals) if (!c.category(code).parent) sum += t.cents
+  return sum
 }
 
 export function categoryTotals(

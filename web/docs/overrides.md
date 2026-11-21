@@ -67,6 +67,12 @@ A row whose `code` equals a built-in taxonomy code is an edit: only `label`,
 total outside the app maps a custom code to its parent. Custom labels never
 leave the app.
 
+Inside the app a parent's figure always includes its children, with each child
+also shown on its own, and grand totals add only top-level categories so each
+dollar counts once. Budgets are app-only and follow the same rule: a parent's
+budget is its own `budgets`/`budget_defaults` amount plus its children's, and
+its spending includes theirs. The stored rows are unchanged.
+
 ### Splits
 
 When a transaction has splits, they replace its single category in every total:

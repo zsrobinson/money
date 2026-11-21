@@ -6,7 +6,6 @@ import {
   PageGrid,
   PageHeader,
   PageMeta,
-  PageStack,
   PageTitle,
 } from "@zsrobinson/shell"
 import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
@@ -38,10 +37,9 @@ import {
   monthName,
   percent,
   relativeDay,
-  timeTick,
 } from "@/lib/format"
 import { investmentsQuery, metaQuery, summaryQuery } from "@/lib/queries"
-import type { Account, Range } from "@/lib/types"
+import type { Account, BudgetRow, Range } from "@/lib/types"
 
 export const Route = createFileRoute("/")({
   validateSearch: z.object({
@@ -140,7 +138,7 @@ function Dashboard() {
                 format={whole}
                 formatTick={moneyTick}
                 formatTime={epochFullDate}
-                formatTimeTick={timeTick(netPoints)}
+                utc
                 className="h-52"
               />
             </SectionCard>
@@ -181,6 +179,7 @@ function Dashboard() {
                 format={whole}
                 formatTick={moneyTick}
                 formatTime={(d) => `Day ${d}`}
+                timeTicks={[1, 8, 15, 22, 29]}
                 formatTimeTick={(d) => String(d)}
                 className="h-52"
               />
@@ -189,50 +188,35 @@ function Dashboard() {
           <PageGrid className="items-stretch lg:grid-cols-3">
             <SectionCard
               title="Budget"
-              className="h-full"
+              fill
               action={<CardLink to="/budgets">Budgets</CardLink>}
             >
               {s.budget.rows.length ? (
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-muted-foreground tabular-nums">
-                      {money(s.budget.spentCents, { whole: true })} of{" "}
-                      {money(s.budget.budgetedCents, { whole: true })}
-                    </span>
+                  <div className="mb-1 flex items-end justify-between gap-3">
+                    <Stat
+                      label="Spent"
+                      detail={`of ${money(s.budget.budgetedCents, { whole: true })} budgeted`}
+                    >
+                      {money(s.budget.spentCents, { whole: true })}
+                    </Stat>
                     <span
-                      className={
+                      className={`text-sm ${
                         s.budget.over
                           ? "text-negative"
                           : "text-muted-foreground"
-                      }
+                      }`}
                     >
                       {s.budget.over ? `${s.budget.over} over` : "On budget"}
                     </span>
                   </div>
                   {s.budget.rows.map((r) => (
-                    <Link
-                      key={r.code}
-                      to="/reports/categories/$code"
-                      params={{ code: r.code }}
-                      className="flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="flex justify-between gap-3 text-sm">
-                        <span className="truncate">{r.label}</span>
-                        <span className="text-muted-foreground tabular-nums">
-                          {money(r.spentCents, { whole: true })} /{" "}
-                          {money(r.budgetCents, { whole: true })}
-                        </span>
-                      </span>
-                      <Meter
-                        label={`${r.label} budget used`}
-                        value={r.spentCents / (r.budgetCents || 1)}
-                        tone={
-                          r.spentCents > (r.budgetCents ?? 0)
-                            ? "over"
-                            : "default"
-                        }
-                      />
-                    </Link>
+                    <div key={r.code} className="flex flex-col gap-2">
+                      <BudgetMeter row={r} />
+                      {r.children.map((c) => (
+                        <BudgetMeter key={c.code} row={c} child />
+                      ))}
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -250,7 +234,11 @@ function Dashboard() {
                 />
               )}
             </SectionCard>
-            <SectionCard title="Spending by category" className="h-full">
+            <SectionCard
+              title="Spending by category"
+              fill
+              action={<CardLink to="/reports">Reports</CardLink>}
+            >
               <DonutChart
                 label={`Spending by category in ${monthName(s.month.month)}`}
                 totalLabel="spent"
@@ -271,7 +259,7 @@ function Dashboard() {
             <SectionCard
               title="Upcoming"
               flush
-              className="h-full"
+              fill
               action={<CardLink to="/recurring">Recurring</CardLink>}
             >
               {s.upcoming.length ? (
@@ -285,7 +273,7 @@ function Dashboard() {
                       >
                         <MerchantMark name={r.merchant} />
                         <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate text-sm font-medium">
+                          <span className="line-clamp-2 text-sm font-medium">
                             {r.merchant}
                           </span>
                           <span className="text-xs text-muted-foreground">
@@ -311,85 +299,85 @@ function Dashboard() {
               )}
             </SectionCard>
           </PageGrid>
-          <PageGrid layout="wide">
-            <PageStack>
-              <SectionCard
-                title="Recent transactions"
-                flush
-                action={
-                  <CardLink to="/transactions">All transactions</CardLink>
-                }
-              >
-                <TxnRows items={s.recent} showAccount={false} />
-              </SectionCard>
-              {investments.data?.holdings.length ? (
-                <SectionCard
-                  title="Investments"
-                  action={<CardLink to="/investments">Holdings</CardLink>}
-                >
-                  <StatRow className="mb-3">
-                    <Stat label="Value">
+          <PageGrid layout="wide" className="items-stretch">
+            <SectionCard
+              title="Recent transactions"
+              flush
+              fill
+              action={<CardLink to="/transactions">All transactions</CardLink>}
+            >
+              <TxnRows items={s.recent} showAccount={false} />
+            </SectionCard>
+            <SectionCard
+              title="Accounts"
+              flush
+              fill
+              action={<CardLink to="/accounts">Accounts</CardLink>}
+              footer={
+                meta.data ? (
+                  <Freshness
+                    generatedAt={meta.data.generatedAt}
+                    stale={
+                      meta.data.sources.filter((x) => x.status !== "healthy")
+                        .length
+                    }
+                  />
+                ) : undefined
+              }
+            >
+              <AccountGroups accounts={s.accounts} />
+            </SectionCard>
+          </PageGrid>
+          {investments.data?.holdings.length ? (
+            <SectionCard
+              title="Investments"
+              action={<CardLink to="/investments">Holdings</CardLink>}
+            >
+              <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-center">
+                <StatRow className="lg:grid lg:grid-cols-1 lg:gap-y-4">
+                  <Stat label="Value">
+                    <Amount
+                      cents={investments.data.totalCents}
+                      tone="plain"
+                      whole
+                    />
+                  </Stat>
+                  <Stat label="Gain on cost">
+                    <Amount
+                      cents={investments.data.gainCents}
+                      tone="signed"
+                      whole
+                    />
+                  </Stat>
+                  {invPoints.length > 1 ? (
+                    <Stat label="3 months">
                       <Amount
-                        cents={investments.data.totalCents}
-                        tone="plain"
-                        whole
-                      />
-                    </Stat>
-                    <Stat label="Gain on cost">
-                      <Amount
-                        cents={investments.data.gainCents}
+                        cents={
+                          investments.data.series.at(-1)!.cents -
+                          investments.data.series[0].cents
+                        }
                         tone="signed"
                         whole
                       />
                     </Stat>
-                    {invPoints.length > 1 ? (
-                      <Stat label="3 months">
-                        <Amount
-                          cents={
-                            investments.data.series.at(-1)!.cents -
-                            investments.data.series[0].cents
-                          }
-                          tone="signed"
-                          whole
-                        />
-                      </Stat>
-                    ) : null}
-                  </StatRow>
-                  <TrendChart
-                    label="Investment value, last 3 months"
-                    baseline="data"
-                    data={invPoints}
-                    config={{
-                      value: { label: "Value", color: "var(--chart-1)" },
-                    }}
-                    format={whole}
-                    formatTick={moneyTick}
-                    formatTime={epochFullDate}
-                    formatTimeTick={timeTick(invPoints)}
-                    className="h-36"
-                  />
-                </SectionCard>
-              ) : null}
-            </PageStack>
-            <PageStack>
-              <SectionCard
-                title="Accounts"
-                flush
-                action={<CardLink to="/accounts">Accounts</CardLink>}
-              >
-                <AccountGroups accounts={s.accounts} />
-              </SectionCard>
-              {meta.data ? (
-                <Freshness
-                  generatedAt={meta.data.generatedAt}
-                  stale={
-                    meta.data.sources.filter((x) => x.status !== "healthy")
-                      .length
-                  }
+                  ) : null}
+                </StatRow>
+                <TrendChart
+                  label="Investment value, last 3 months"
+                  baseline="data"
+                  data={invPoints}
+                  config={{
+                    value: { label: "Value", color: "var(--chart-1)" },
+                  }}
+                  format={whole}
+                  formatTick={moneyTick}
+                  formatTime={epochFullDate}
+                  utc
+                  className="h-44"
                 />
-              ) : null}
-            </PageStack>
-          </PageGrid>
+              </div>
+            </SectionCard>
+          ) : null}
         </>
       )}
     </Page>
@@ -402,6 +390,43 @@ function paceText(spent: number, lastSameDay: number) {
   const share = Math.abs(diff) / lastSameDay
   if (share < 0.03) return "Same pace as last month"
   return `${percent(share)} ${diff > 0 ? "more" : "less"} than last month by now`
+}
+
+function BudgetMeter({
+  row: r,
+  child = false,
+}: {
+  row: BudgetRow
+  child?: boolean
+}) {
+  const limit = (r.totalBudgetCents ?? 0) + r.rolloverCents
+  const over = r.totalBudgetCents != null && r.spentCents > limit
+  return (
+    <Link
+      to="/reports/categories/$code"
+      params={{ code: r.code }}
+      className={`flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring ${child ? "pl-4" : ""}`}
+    >
+      <span className="flex justify-between gap-3 text-sm">
+        <span className={`truncate ${child ? "text-muted-foreground" : ""}`}>
+          {r.label}
+        </span>
+        <span className="shrink-0 text-muted-foreground tabular-nums">
+          {money(r.spentCents, { whole: true })}
+          {r.totalBudgetCents != null
+            ? ` / ${money(limit, { whole: true })}`
+            : ""}
+        </span>
+      </span>
+      {r.totalBudgetCents != null ? (
+        <Meter
+          label={`${r.label} budget used`}
+          value={r.spentCents / (limit || 1)}
+          tone={over ? "over" : "default"}
+        />
+      ) : null}
+    </Link>
+  )
 }
 
 function AccountGroups({ accounts }: { accounts: Account[] }) {
@@ -461,7 +486,7 @@ function Freshness({
   stale: number
 }) {
   return (
-    <PageMeta className="px-1 text-xs">
+    <PageMeta className="mr-auto text-xs">
       <span>
         {generatedAt
           ? `Updated ${new Date(generatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`

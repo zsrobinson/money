@@ -21,8 +21,9 @@ import {
   epoch,
   epochFullDate,
   money,
+  mask,
   moneyTick,
-  timeTick,
+  syncLabel,
 } from "@/lib/format"
 import { SourceList } from "@/components/sources"
 import { accountsQuery, summaryQuery } from "@/lib/queries"
@@ -104,23 +105,37 @@ function Accounts() {
                 <Amount cents={nw?.liabilitiesCents} tone="plain" whole />
               </Stat>
             </StatRow>
+            {/* Liabilities get their own axis; on one scale with assets
+                every line flattens. */}
             <TrendChart
-              label="Assets, liabilities and net worth over time"
+              label="Assets and net worth over time"
               loading={!nw}
+              baseline="data"
               data={points}
               config={{
                 assets: { label: "Assets", color: "var(--chart-positive)" },
-                liabilities: {
-                  label: "Liabilities",
-                  color: "var(--chart-negative)",
-                },
                 net: { label: "Net worth", color: "var(--chart-1)" },
               }}
               format={(v) => money(Math.round(v * 100), { whole: true })}
               formatTime={epochFullDate}
               formatTick={moneyTick}
-              formatTimeTick={timeTick(points)}
+              utc
               className="h-60"
+            />
+            <TrendChart
+              label="Liabilities over time"
+              loading={!nw}
+              baseline="data"
+              data={points.map((p) => ({ time: p.time, owed: -p.liabilities }))}
+              config={{
+                owed: { label: "Liabilities", color: "var(--chart-negative)" },
+              }}
+              format={(v) => money(Math.round(v * 100), { whole: true })}
+              formatTime={epochFullDate}
+              formatTick={moneyTick}
+              utc
+              legend
+              className="mt-2 h-40"
             />
           </SectionCard>
           {KINDS.map((kind) => {
@@ -185,17 +200,21 @@ function AccountRows({ accounts }: { accounts: AccountListItem[] }) {
           >
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-medium">{a.name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {a.institution}
-                {a.mask ? ` ·· ${a.mask}` : ""}
-                {a.excludeNetWorth ? " · Not in net worth" : ""}
-                {a.availability !== "available" ? " · Closed" : ""}
+              {/* Wraps on a phone rather than cutting off a status. */}
+              <span className="text-xs text-muted-foreground">
+                {[
+                  a.institution,
+                  a.mask ? mask(a.mask) : null,
+                  a.excludeNetWorth ? "Not in net worth" : null,
+                  a.availability !== "available" ? "Closed" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
                 {a.sourceStatus !== "healthy" &&
                 a.availability === "available" ? (
                   <span className="text-negative">
-                    {" "}
-                    · Sync{" "}
-                    {a.sourceStatus === "stale" ? "behind" : a.sourceStatus}
+                    {" · "}
+                    {syncLabel(a.sourceStatus)}
                   </span>
                 ) : null}
               </span>

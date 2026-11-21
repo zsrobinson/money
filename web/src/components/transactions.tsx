@@ -2,6 +2,7 @@ import { Fragment } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { cn } from "@zsrobinson/shell"
+import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Checkbox } from "@zsrobinson/shell/ui/checkbox"
 import {
   Tooltip,
@@ -11,7 +12,7 @@ import {
 import { EyeOffIcon, NotebookPenIcon, SplitIcon } from "lucide-react"
 import { Amount, MerchantMark } from "@/components/money"
 import { Choice } from "@/components/pickers"
-import { longDate, money, shortDate } from "@/lib/format"
+import { dayHeading, money, shortDate } from "@/lib/format"
 import { categoriesQuery, metaQuery, tagsQuery } from "@/lib/queries"
 import type { Category, Txn } from "@/lib/types"
 
@@ -43,53 +44,62 @@ export function ReviewDot() {
 }
 
 /**
- * Dense transaction rows. Columns follow the list's own width; a narrow list
- * stacks merchant over category and date. `grouped` adds a header per day
- * with that day's total, and `primary="account"` names the account instead
- * of the merchant (for a merchant's own page).
+ * The one list of transactions used everywhere: grouped under a header per
+ * day (Today, Yesterday, then full dates), the merchant with any Pending badge
+ * beneath it, then a category column wide enough for the longest built-in
+ * name. `secondary="account"` shows the account in that column instead, for
+ * a merchant's own page; `showAccount` adds an account column on wide lists.
+ * A narrow list stacks the category under the merchant. Only a list sorted
+ * by something other than date drops the day headers (`grouped={false}`),
+ * and then shows each date under the merchant.
  */
 export function TxnRows({
   items,
   selected,
   onToggle,
   showAccount = true,
-  grouped = false,
   dayTotals,
-  primary = "merchant",
+  secondary = "category",
+  grouped = true,
   className,
 }: {
   items: Txn[]
   selected?: Set<string>
   onToggle?: (id: string, on: boolean) => void
   showAccount?: boolean
-  grouped?: boolean
+  /** Net of each day across pages, shown in the day header. */
   dayTotals?: Record<string, number>
-  primary?: "merchant" | "account"
+  secondary?: "category" | "account"
+  grouped?: boolean
   className?: string
 }) {
   const label = useCategoryLabels()
   const today = useQuery(metaQuery).data?.today
   const tags = new Map((useQuery(tagsQuery).data ?? []).map((t) => [t.id, t]))
-  const wide = showAccount && primary === "merchant"
-  const columns = grouped
-    ? wide
-      ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,2fr)_minmax(0,1fr)_6.5rem] @3xl:grid-cols-[2rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_6.5rem]"
-      : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,2fr)_minmax(0,1fr)_6.5rem]"
-    : wide
-      ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[5.5rem_2rem_minmax(0,2fr)_minmax(0,1fr)_6.5rem] @3xl:grid-cols-[5.5rem_2rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_6.5rem]"
-      : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[5.5rem_2rem_minmax(0,2fr)_minmax(0,1fr)_6.5rem]"
+  const accountColumn = showAccount && secondary === "category"
+  const columns = accountColumn
+    ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem] @3xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_minmax(0,10rem)_6rem]"
+    : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem]"
+  const secondText = (t: Txn) =>
+    secondary === "account"
+      ? t.accountName
+      : t.split
+        ? "Split"
+        : label(t.category)
   return (
     <ul className={cn("@container flex flex-col", className)}>
       {items.map((t, i) => {
         const header = grouped && (i === 0 || items[i - 1].date !== t.date)
-        const name = primary === "account" ? t.accountName : txnName(t)
+        const name = txnName(t)
+        const tagNames = t.tags
+          .map((id) => tags.get(id)?.name)
+          .filter(Boolean)
+          .join(", ")
         return (
           <Fragment key={t.id}>
             {header ? (
               <li className="flex items-center justify-between gap-3 border-b bg-muted/50 px-4 py-1.5 text-xs font-medium text-muted-foreground sm:px-5">
-                <span>
-                  {today && t.date === today ? "Today" : longDate(t.date)}
-                </span>
+                <span>{dayHeading(t.date, today)}</span>
                 {dayTotals?.[t.date] !== undefined ? (
                   <span className="tabular-nums">
                     {money(dayTotals[t.date], { sign: true })}
@@ -108,7 +118,7 @@ export function TxnRows({
                   <Checkbox
                     checked={selected?.has(t.id) ?? false}
                     onCheckedChange={(on) => onToggle(t.id, on)}
-                    aria-label={`Select ${txnName(t)}, ${shortDate(t.date)}`}
+                    aria-label={`Select ${name}, ${shortDate(t.date)}`}
                   />
                 </span>
               ) : null}
@@ -116,25 +126,15 @@ export function TxnRows({
                 to="/transactions/$id"
                 params={{ id: t.id }}
                 className={cn(
-                  "grid min-h-13 flex-1 items-center gap-x-3 py-2 pr-4 outline-none hover:bg-muted/60 focus-visible:bg-muted sm:min-h-11 sm:pr-5",
+                  "grid min-h-13 flex-1 items-center gap-x-3 py-2 pr-4 outline-none hover:bg-muted/60 focus-visible:bg-muted sm:pr-5",
                   onToggle ? "pl-2" : "pl-4 sm:pl-5",
                   columns
                 )}
               >
-                {!grouped ? (
-                  <span className="hidden text-sm whitespace-nowrap text-muted-foreground tabular-nums @xl:block">
-                    {shortDate(t.date, today)}
-                  </span>
-                ) : null}
                 <MerchantMark name={name} />
-                <span className="flex min-w-0 flex-col">
+                <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{name}</span>
-                    {t.pending ? (
-                      <span className="shrink-0 rounded-full border px-1.5 text-[11px] leading-4 text-muted-foreground">
-                        Pending
-                      </span>
-                    ) : null}
                     {!t.reviewed && !t.pending && !t.hidden ? (
                       <ReviewDot />
                     ) : null}
@@ -157,23 +157,44 @@ export function TxnRows({
                       />
                     ) : null}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground @xl:hidden">
-                    {t.split ? "Split" : label(t.category)}
-                    {grouped ? "" : ` · ${shortDate(t.date, today)}`}
-                  </span>
-                  {t.tags.length ? (
-                    <span className="hidden truncate text-xs text-muted-foreground @xl:block">
-                      {t.tags
-                        .map((id) => tags.get(id)?.name)
-                        .filter(Boolean)
-                        .join(", ")}
+                  <span
+                    className={cn(
+                      "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+                      grouped && !t.pending && !tagNames && "@xl:hidden"
+                    )}
+                  >
+                    {grouped ? null : (
+                      <>
+                        <span className="shrink-0 tabular-nums">
+                          {shortDate(t.date, today)}
+                        </span>
+                        <span aria-hidden className="@xl:hidden">
+                          ·
+                        </span>
+                      </>
+                    )}
+                    <span className="min-w-0 truncate @xl:hidden">
+                      {secondText(t)}
                     </span>
-                  ) : null}
+                    {t.pending ? (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1.5 text-[11px] font-normal text-muted-foreground"
+                      >
+                        Pending
+                      </Badge>
+                    ) : null}
+                    {tagNames ? (
+                      <span className="hidden min-w-0 truncate @xl:inline">
+                        {tagNames}
+                      </span>
+                    ) : null}
+                  </span>
                 </span>
                 <span className="hidden truncate text-sm text-muted-foreground @xl:block">
-                  {t.split ? "Split" : label(t.category)}
+                  {secondText(t)}
                 </span>
-                {wide ? (
+                {accountColumn ? (
                   <span className="hidden truncate text-sm text-muted-foreground @3xl:block">
                     {t.accountName}
                   </span>

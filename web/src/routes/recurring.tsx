@@ -167,7 +167,7 @@ function RecurringPage() {
                         </div>
                       ) : null}
                       <div className="flex min-h-10 items-center justify-between gap-3 px-5 py-1.5 text-sm">
-                        <span className="truncate">{u.item.merchant}</span>
+                        <span className="line-clamp-2">{u.item.merchant}</span>
                         <Amount
                           cents={u.item.amountCents}
                           className="whitespace-nowrap"
@@ -244,8 +244,8 @@ function RecurringRow({ item: i, today }: { item: Recurring; today: string }) {
         params={{ key: i.key }}
         className="flex min-w-0 flex-1 flex-col rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="truncate text-sm font-medium">{i.merchant}</span>
-        <span className="truncate text-xs text-muted-foreground">
+        <span className="line-clamp-2 text-sm font-medium">{i.merchant}</span>
+        <span className="text-xs text-muted-foreground">
           {CADENCE[i.cadence] ?? i.cadence}
           {source} ·{" "}
           {i.status === "active"
@@ -258,7 +258,7 @@ function RecurringRow({ item: i, today }: { item: Recurring; today: string }) {
       </span>
       <Amount
         cents={i.amountCents}
-        className="w-24 text-right text-sm font-medium whitespace-nowrap"
+        className="shrink-0 text-right text-sm font-medium whitespace-nowrap sm:w-24"
       />
       <DropdownMenu>
         <DropdownMenuTrigger

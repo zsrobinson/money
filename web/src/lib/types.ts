@@ -179,7 +179,10 @@ export type BudgetRow = {
   label: string
   parent: string | null
   custom: boolean
+  /** This category's own amount, the one you edit. */
   budgetCents: number | null
+  /** Own amount plus the categories inside it; null when none has one. */
+  totalBudgetCents: number | null
   source: "month" | "default" | null
   defaultCents: number | null
   rollover: boolean
@@ -187,6 +190,12 @@ export type BudgetRow = {
   spentCents: number
   lastMonthCents: number
   averageCents: number
+}
+/** Over top-level categories only, so each dollar counts once. */
+export type BudgetTotals = {
+  budgetedCents: number
+  spentCents: number
+  unbudgetedCents: number
 }
 export type Summary = {
   range: Range
@@ -206,12 +215,10 @@ export type Summary = {
     pace: { day: number; thisMonth: number | null; lastMonth: number | null }[]
     top: { code: string; label: string; cents: number }[]
   }
-  budget: {
+  budget: BudgetTotals & {
     month: string
-    budgetedCents: number
-    spentCents: number
     over: number
-    rows: BudgetRow[]
+    rows: (BudgetRow & { children: BudgetRow[] })[]
   }
   upcoming: Recurring[]
   accounts: Account[]

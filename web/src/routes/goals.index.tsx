@@ -31,7 +31,7 @@ export const Route = createFileRoute("/goals/")({
 
 export function GoalStatus({ goal: g }: { goal: Goal }) {
   if (g.progress >= 1) return <Badge>Reached</Badge>
-  if (g.onTrack === true) return <Badge variant="secondary">On track</Badge>
+  if (g.onTrack === true) return <Badge variant="positive">On track</Badge>
   if (g.onTrack === false) return <Badge variant="destructive">Behind</Badge>
   return null
 }
@@ -66,7 +66,7 @@ function Goals() {
       ) : q.data.length ? (
         <>
           <StatRow>
-            <Stat label="Saved toward goals">
+            <Stat label="Saved">
               {money(
                 q.data
                   .filter((g) => g.kind === "save")
@@ -85,8 +85,9 @@ function Goals() {
                 { whole: true }
               )}
             </Stat>
-            <Stat label="On track" detail={`of ${q.data.length} goals`}>
-              {q.data.filter((g) => g.progress >= 1 || g.onTrack).length}
+            <Stat label="On track">
+              {q.data.filter((g) => g.progress >= 1 || g.onTrack).length} of{" "}
+              {q.data.length}
             </Stat>
           </StatRow>
           <PageGrid className="sm:grid-cols-2 lg:grid-cols-3">

@@ -149,20 +149,21 @@ export function DatePicker({
   return (
     <div className={cn("flex items-center gap-1", className)}>
       <Popover open={open} onOpenChange={setOpen}>
+        {/* Filled and borderless like Input and the Select trigger beside it. */}
         <PopoverTrigger
           render={
-            <Button
+            <button
+              type="button"
               id={id}
-              variant="outline"
               aria-label={ariaLabel}
               className={cn(
-                "min-w-0 flex-1 justify-start font-normal",
+                "flex h-8 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-transparent bg-input/50 px-3 text-left text-base transition-[color,box-shadow] duration-200 outline-none hover:bg-input/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 md:text-sm",
                 !value && "text-muted-foreground"
               )}
             />
           }
         >
-          <CalendarIcon data-icon="inline-start" />
+          <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">
             {value ? fullDate(value) : placeholder}
           </span>

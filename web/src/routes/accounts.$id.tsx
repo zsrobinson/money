@@ -17,18 +17,14 @@ import {
 } from "@zsrobinson/shell/blocks/detail-list"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Badge } from "@zsrobinson/shell/ui/badge"
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@zsrobinson/shell/ui/field"
+import { Field, FieldGroup, FieldLabel } from "@zsrobinson/shell/ui/field"
 import { Input } from "@zsrobinson/shell/ui/input"
 import { Switch } from "@zsrobinson/shell/ui/switch"
 import { z } from "zod"
 import {
   Amount,
   CardLink,
+  InfoTip,
   Loading,
   Meter,
   RangeSelect,
@@ -45,9 +41,10 @@ import {
   money,
   moneyTick,
   monthEpoch,
+  mask,
   percent,
-  timeTick,
-  titleCase,
+  sentenceCase,
+  syncLabel,
 } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { accountQuery } from "@/lib/queries"
@@ -94,13 +91,43 @@ function AccountPage() {
     time: epoch(p.date),
     balance: p.cents == null ? null : (a.liability ? -p.cents : p.cents) / 100,
   }))
-  const hasIn = flows.some((f) => f.incomeCents)
-  const hasOut = flows.some((f) => f.spendingCents)
-  const meta = [
-    a.institution,
-    titleCase(a.subtype ?? a.type),
-    a.mask ? `·· ${a.mask}` : null,
-  ].filter(Boolean)
+  const hasMoved = flows.some(
+    (f) =>
+      f.incomeCents ||
+      f.spendingCents ||
+      f.transferInCents ||
+      f.transferOutCents
+  )
+  // Each kind of movement the account has, so a card's payments show beside
+  // its spending under a legend.
+  const flowConfig = {
+    ...(flows.some((f) => f.incomeCents)
+      ? { in: { label: "Income", color: "var(--chart-positive)" } }
+      : {}),
+    ...(flows.some((f) => f.spendingCents)
+      ? { out: { label: "Spending", color: "var(--chart-negative)" } }
+      : {}),
+    ...(flows.some((f) => f.transferInCents)
+      ? {
+          moveIn: {
+            label: a.liability ? "Payments" : "Transfers in",
+            color: "var(--chart-2)",
+          },
+        }
+      : {}),
+    ...(flows.some((f) => f.transferOutCents)
+      ? {
+          moveOut: {
+            label: "Transfers out",
+            color: "var(--chart-neutral)",
+          },
+        }
+      : {}),
+  }
+  const kind = sentenceCase(a.subtype ?? a.type)
+  const meta = [a.institution, kind, a.mask ? mask(a.mask) : null].filter(
+    Boolean
+  )
   return (
     <Page>
       <PageHeader>
@@ -121,9 +148,7 @@ function AccountPage() {
               <Badge variant="secondary">Closed</Badge>
             ) : null}
             {a.sourceStatus !== "healthy" ? (
-              <Badge variant="destructive">
-                Sync {a.sourceStatus === "stale" ? "behind" : a.sourceStatus}
-              </Badge>
+              <Badge variant="destructive">{syncLabel(a.sourceStatus)}</Badge>
             ) : null}
           </PageMeta>
         </div>
@@ -131,6 +156,11 @@ function AccountPage() {
       <PageGrid layout="wide" className="items-stretch">
         <SectionCard
           title="Balance"
+          info={
+            q.data.estimated
+              ? "Early history is estimated from transactions."
+              : undefined
+          }
           action={
             <RangeSelect
               value={q.data.range}
@@ -194,24 +224,19 @@ function AccountPage() {
             format={whole}
             formatTick={moneyTick}
             formatTime={epochFullDate}
-            formatTimeTick={timeTick(points)}
+            utc
             className="h-56"
           />
-          {q.data.estimated ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Early history is estimated from transactions.
-            </p>
-          ) : null}
         </SectionCard>
-        <SectionCard title="Details" className="h-full">
+        <SectionCard title="Details" fill>
           <DetailList>
             <DetailRow label="Institution">{a.institution}</DetailRow>
-            <DetailRow label="Type">{titleCase(a.subtype ?? a.type)}</DetailRow>
+            <DetailRow label="Type">{kind}</DetailRow>
             <DetailRow label="Bank name">
               {a.officialName ?? <Unavailable />}
             </DetailRow>
             <DetailRow label="Number">
-              {a.mask ? `·· ${a.mask}` : <Unavailable />}
+              {a.mask ? mask(a.mask) : <Unavailable />}
             </DetailRow>
             <DetailRow label="Currency">{a.currency}</DetailRow>
             {a.limitCents != null ? (
@@ -226,10 +251,11 @@ function AccountPage() {
           </DetailList>
         </SectionCard>
       </PageGrid>
-      <PageGrid layout="wide">
+      <PageGrid layout="wide" className="items-stretch">
         <SectionCard
           title="Transactions"
           flush
+          fill
           action={
             <CardLink to="/transactions" search={{ account: a.id }}>
               All {q.data.transactions}
@@ -245,36 +271,30 @@ function AccountPage() {
           )}
         </SectionCard>
         <PageStack>
-          {hasIn || hasOut ? (
+          {hasMoved ? (
             <SectionCard title="Money in and out">
               <TrendChart
                 kind="bar"
                 stacked
-                label={`${a.name} income and spending by month`}
+                label={`${a.name} money in and out by month`}
                 data={flows.map((f) => ({
                   time: monthEpoch(f.month),
-                  ...(hasIn ? { in: f.incomeCents / 100 } : {}),
-                  ...(hasOut ? { out: -f.spendingCents / 100 } : {}),
+                  ...("in" in flowConfig ? { in: f.incomeCents / 100 } : {}),
+                  ...("out" in flowConfig
+                    ? { out: -f.spendingCents / 100 }
+                    : {}),
+                  ...("moveIn" in flowConfig
+                    ? { moveIn: f.transferInCents / 100 }
+                    : {}),
+                  ...("moveOut" in flowConfig
+                    ? { moveOut: -f.transferOutCents / 100 }
+                    : {}),
                 }))}
-                config={{
-                  ...(hasIn
-                    ? {
-                        in: { label: "Income", color: "var(--chart-positive)" },
-                      }
-                    : {}),
-                  ...(hasOut
-                    ? {
-                        out: {
-                          label: "Spending",
-                          color: "var(--chart-negative)",
-                        },
-                      }
-                    : {}),
-                }}
+                config={flowConfig}
                 format={whole}
                 formatTick={moneyTick}
                 formatTime={epochMonthYear}
-                className="h-44"
+                className="h-56"
               />
             </SectionCard>
           ) : null}
@@ -323,12 +343,12 @@ function AccountSettings({ a }: { a: Account }) {
             checked={a.hidden}
             onCheckedChange={(on) => save.mutate({ hidden: on })}
           />
-          <div className="flex flex-col">
+          <span className="flex items-center gap-0.5">
             <FieldLabel htmlFor="account-hidden">Hide from lists</FieldLabel>
-            <FieldDescription>
+            <InfoTip label="About hiding">
               Its balance and transactions still count everywhere.
-            </FieldDescription>
-          </div>
+            </InfoTip>
+          </span>
         </Field>
       </FieldGroup>
     </SectionCard>

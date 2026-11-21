@@ -18,8 +18,11 @@ import {
   monthsBetween,
   netWorthSeries,
   rangeStart,
+  reportPeriod,
   sampleDates,
   spendCents,
+  topLevelSum,
+  withChildren,
 } from "./analytics.ts"
 import { DetailUnavailable } from "./detail.ts"
 import type { AccountView, Computed, EffTxn, Model } from "./model.ts"
@@ -495,9 +498,10 @@ export function createApi(model: Model) {
       accounts: m.accounts
         .filter((a) => !a.hidden && a.availability === "available")
         .map(accountJson),
+      // A matched transfer is two rows that cancel out; leave both off.
       recent: m.txns
-        .filter((t) => !t.hidden)
-        .slice(0, 8)
+        .filter((t) => !t.hidden && !t.transferPairId)
+        .slice(0, 10)
         .map((t) => txnJson(m, t)),
       unreviewed: m.txns.filter((t) => !t.reviewed && !t.hidden && !t.pending)
         .length,
@@ -528,11 +532,31 @@ export function createApi(model: Model) {
     const dates = sampleDates(from, m.today)
     const values = accountSeries(m, a, dates)
     const txns = m.txns.filter((t) => t.accountId === a.id)
+    const flowMonths = monthsBetween(
+      addMonths(monthOf(m.today), -5),
+      monthOf(m.today)
+    )
+    // Transfers (card payments, savings moves) sit beside income and spending.
+    const moved = new Map(
+      flowMonths.map((mo) => [mo, { inCents: 0, outCents: 0 }])
+    )
+    for (const x of m.allocations) {
+      if (x.txn.accountId !== a.id || x.txn.pending || x.group !== "transfer")
+        continue
+      const row = moved.get(monthOf(x.txn.date))
+      if (!row) continue
+      if (x.amountCents > 0) row.inCents += x.amountCents
+      else row.outCents -= x.amountCents
+    }
     const flows = monthlyFlows(
       m,
-      monthsBetween(addMonths(monthOf(m.today), -5), monthOf(m.today)),
+      flowMonths,
       (x) => x.txn.accountId === a.id
-    )
+    ).map((f) => ({
+      ...f,
+      transferInCents: moved.get(f.month)!.inCents,
+      transferOutCents: moved.get(f.month)!.outCents,
+    }))
     return c.json({
       account: accountJson(a),
       range,
@@ -587,6 +611,15 @@ export function createApi(model: Model) {
       account: q.account,
       category: q.category,
       merchant: q.merchant,
+      match: (() => {
+        if (!q.match) return undefined
+        try {
+          const parsed = RuleMatch.safeParse(JSON.parse(q.match))
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      })(),
       tag: q.tag,
       from: isDate(q.from) ? q.from : undefined,
       to: isDate(q.to) ? q.to : undefined,
@@ -615,6 +648,7 @@ export function createApi(model: Model) {
   }
   function filterTxns(m: Computed, f: ReturnType<typeof TxnQuery>) {
     const needle = normalizeText(f.q)
+    const matches = f.match ? compileMatch(f.match) : undefined
     const categoryCodes = f.category
       ? new Set(
           m.categories
@@ -638,6 +672,7 @@ export function createApi(model: Model) {
       )
         return false
       if (f.merchant && t.merchantKey !== f.merchant) return false
+      if (matches && !matches(t, matchText(t))) return false
       if (f.tag && !t.tags.includes(f.tag)) return false
       if (f.from && t.date < f.from) return false
       if (f.to && t.date > f.to) return false
@@ -676,11 +711,21 @@ export function createApi(model: Model) {
         (a, b) => (a.merchantEff ?? "").localeCompare(b.merchantEff ?? "") * dir
       )
     else if (f.order === "asc") list = list.toReversed()
+    // Money in and out leaves out transfers between your own accounts and
+    // hidden transactions, like every other total.
+    const counted = (t: EffTxn) =>
+      t.hidden
+        ? []
+        : (t.splits?.length
+            ? t.splits.map((x) => ({ c: x.category, cents: x.amountCents }))
+            : [{ c: t.categoryEff, cents: t.amountCents }]
+          ).filter((x) => m.category(x.c).group !== "transfer")
     let inflow = 0
     let outflow = 0
     for (const t of list)
-      if (t.amountCents > 0) inflow += t.amountCents
-      else outflow += t.amountCents
+      for (const x of counted(t))
+        if (x.cents > 0) inflow += x.cents
+        else outflow += x.cents
     const page = list.slice(f.offset, f.offset + f.limit)
     return c.json({
       total: list.length,
@@ -689,15 +734,16 @@ export function createApi(model: Model) {
       offset: f.offset,
       items: page.map((t) => txnJson(m, t)),
       // Net of every matching transaction on each day shown, across pages.
+      // A day of only transfers has no total.
       dayTotals: Object.fromEntries(
-        [...new Set(page.map((t) => t.date))].map((date) => [
-          date,
-          list.reduce(
-            (sum, t) =>
-              t.date === date && !t.hidden ? sum + t.amountCents : sum,
-            0
-          ),
-        ])
+        [...new Set(page.map((t) => t.date))].flatMap((date) => {
+          const parts = list
+            .filter((t) => t.date === date)
+            .flatMap((t) => counted(t))
+          return parts.length
+            ? [[date, parts.reduce((sum, x) => sum + x.cents, 0)]]
+            : []
+        })
       ),
     })
   })
@@ -1040,7 +1086,7 @@ export function createApi(model: Model) {
     const selected = isMonth(c.req.query("month")) ? c.req.query("month")! : end
     const from = `${selected}-01`
     const to = monthEnd(selected)
-    const totals = categoryTotals(m, from, to, "category")
+    const totals = withChildren(m, categoryTotals(m, from, to, "category"))
     const rows = [...totals].map(([code, t]) => ({
       code,
       label: m.category(code).label,
@@ -1088,15 +1134,29 @@ export function createApi(model: Model) {
   api.get("/reports/categories", (c) => {
     const m = model.get()
     const range = asRange(c.req.query("range"), "6m")
-    const from = rangeStart(range, m.today, earliestDate(m))
-    const months = monthsBetween(monthOf(from), monthOf(m.today))
-    const flows = monthlyFlows(m, months)
-    const totals = categoryTotals(m, from, m.today, "category")
-    const prevFrom = addDays(
-      from,
-      -(Date.parse(m.today) - Date.parse(from)) / 86_400_000
+    const period = reportPeriod(range, m.today, earliestDate(m))
+    const { months, from, to } = period
+    const totals = withChildren(m, categoryTotals(m, from, to, "category"))
+    const prev = withChildren(
+      m,
+      categoryTotals(m, period.previous.from, period.previous.to, "category")
     )
-    const prev = categoryTotals(m, prevFrom, addDays(from, -1), "category")
+    // Per month and category, parents including their children.
+    const index = new Map(months.map((mo, i) => [mo, i]))
+    const monthly = new Map<string, number[]>()
+    const addMonthly = (code: string, i: number, cents: number) => {
+      let row = monthly.get(code)
+      if (!row) monthly.set(code, (row = months.map(() => 0)))
+      row[i] += cents
+    }
+    for (const a of m.allocations) {
+      if (a.txn.pending || a.group !== "expense") continue
+      const i = index.get(monthOf(a.txn.date))
+      if (i === undefined) continue
+      addMonthly(a.category, i, spendCents(a))
+      const parent = m.category(a.category).parent
+      if (parent) addMonthly(parent, i, spendCents(a))
+    }
     const rows = [...totals]
       .filter(([code]) => m.category(code).group === "expense")
       .map(([code, t]) => ({
@@ -1106,18 +1166,19 @@ export function createApi(model: Model) {
         cents: t.cents,
         count: t.count,
         previousCents: prev.get(code)?.cents ?? 0,
-        monthly: flows.map((f) =>
-          m.category(code).custom ? null : (f.byCategory[code] ?? 0)
-        ),
+        monthly: monthly.get(code) ?? months.map(() => 0),
       }))
       .sort((a, b) => b.cents - a.cents)
+    const expense = new Map(
+      rows.map((r) => [r.code, { cents: r.cents }] as const)
+    )
     return c.json({
       range,
       from,
-      to: m.today,
+      to,
       months,
       rows,
-      totalCents: rows.reduce((s, r) => s + r.cents, 0),
+      totalCents: topLevelSum(m, expense),
     })
   })
   api.get("/reports/categories/:code", (c) => {
@@ -1190,7 +1251,7 @@ export function createApi(model: Model) {
   api.get("/reports/merchants", (c) => {
     const m = model.get()
     const range = asRange(c.req.query("range"), "6m")
-    const from = rangeStart(range, m.today, earliestDate(m))
+    const { from, to } = reportPeriod(range, m.today, earliestDate(m))
     const rows = new Map<
       string,
       {
@@ -1208,6 +1269,7 @@ export function createApi(model: Model) {
         t.pending ||
         t.amountCents >= 0 ||
         t.date < from ||
+        t.date > to ||
         !t.merchantKey
       )
         continue
@@ -1228,6 +1290,7 @@ export function createApi(model: Model) {
     return c.json({
       range,
       from,
+      to,
       rows: list.map((r) => ({
         ...r,
         categoryLabel: m.category(r.category).label,
@@ -1279,9 +1342,8 @@ export function createApi(model: Model) {
   })
   api.get("/reports/trends", (c) => {
     const m = model.get()
-    const count = Math.min(36, Math.max(3, Number(c.req.query("months")) || 12))
-    const end = monthOf(m.today)
-    const months = monthsBetween(addMonths(end, -(count - 1)), end)
+    const range = asRange(c.req.query("range"), "6m")
+    const { months, from, to } = reportPeriod(range, m.today, earliestDate(m))
     const flows = monthlyFlows(m, months)
     const totals = new Map<string, number>()
     for (const f of flows)
@@ -1292,6 +1354,9 @@ export function createApi(model: Model) {
       .slice(0, 4)
       .map(([k]) => k)
     return c.json({
+      range,
+      from,
+      to,
       months,
       categories: top.map((code) => ({ code, label: m.category(code).label })),
       rows: flows.map((f) => {
@@ -1315,22 +1380,36 @@ export function createApi(model: Model) {
 
   function budgetSummary(m: Computed, month: string) {
     const b = budgetRows(m, month)
-    const budgeted = b.rows.filter((r) => r.budgetCents != null)
+    const top = b.rows.filter((r) => !r.parent && r.totalBudgetCents != null)
+    const ratio = (r: BudgetLine) =>
+      r.spentCents / Math.max(1, (r.totalBudgetCents ?? 0) + r.rolloverCents)
     return {
       month,
-      budgetedCents: budgeted.reduce((s, r) => s + (r.budgetCents ?? 0), 0),
-      spentCents: budgeted.reduce((s, r) => s + r.spentCents, 0),
-      over: budgeted.filter((r) => r.spentCents > (r.budgetCents ?? 0)).length,
-      rows: budgeted
-        .sort(
-          (a, b) =>
-            b.spentCents / (b.budgetCents || 1) -
-            a.spentCents / (a.budgetCents || 1)
-        )
-        .slice(0, 5),
+      ...b.totals,
+      over: b.rows.filter(
+        (r) =>
+          r.totalBudgetCents != null &&
+          r.spentCents > r.totalBudgetCents + r.rolloverCents
+      ).length,
+      // The busiest budgets, each with the categories inside it.
+      rows: top
+        .sort((x, y) => ratio(y) - ratio(x))
+        .slice(0, 5)
+        .map((r) => ({
+          ...r,
+          children: b.rows.filter(
+            (x) =>
+              x.parent === r.code &&
+              (x.totalBudgetCents != null || x.spentCents > 0)
+          ),
+        })),
     }
   }
-  /** Budget amounts for a month: the month's own amount, else the default. */
+  /**
+   * Budget amounts for a month: the month's own amount, else the default. A
+   * parent's budget is its own amount plus its children's, and its spending
+   * includes theirs, so totals over top-level categories count each dollar once.
+   */
   function budgetBook(m: Computed) {
     const monthly = new Map<string, Map<string, number>>()
     for (const r of db
@@ -1349,10 +1428,18 @@ export function createApi(model: Model) {
     )
     const budgetOf = (month: string, code: string) =>
       monthly.get(month)?.get(code) ?? defaults.get(code)
-    // Custom categories without their own budget count toward their parent.
-    const target = (month: string, code: string) => {
-      const cat = m.category(code)
-      return cat.custom && budgetOf(month, code) == null ? cat.owned : code
+    const children = new Map<string, string[]>()
+    for (const x of m.categories)
+      if (x.parent)
+        children.set(x.parent, [...(children.get(x.parent) ?? []), x.code])
+    /** Own amount plus the children's; null when none of them has one. */
+    const totalOf = (month: string, code: string) => {
+      let total: number | undefined = budgetOf(month, code)
+      for (const child of children.get(code) ?? []) {
+        const b = budgetOf(month, child)
+        if (b != null) total = (total ?? 0) + b
+      }
+      return total ?? null
     }
     const spentByMonth = new Map<string, Map<string, number>>()
     for (const a of m.allocations) {
@@ -1360,8 +1447,9 @@ export function createApi(model: Model) {
       const month = monthOf(a.txn.date)
       let mm = spentByMonth.get(month)
       if (!mm) spentByMonth.set(month, (mm = new Map()))
-      const key = target(month, a.category)
-      mm.set(key, (mm.get(key) ?? 0) + spendCents(a))
+      mm.set(a.category, (mm.get(a.category) ?? 0) + spendCents(a))
+      const parent = m.category(a.category).parent
+      if (parent) mm.set(parent, (mm.get(parent) ?? 0) + spendCents(a))
     }
     const spent = (month: string, code: string) =>
       spentByMonth.get(month)?.get(code) ?? 0
@@ -1372,14 +1460,15 @@ export function createApi(model: Model) {
       if (!since || since >= month) return 0
       let carry = 0
       for (let mo = since; mo < month; mo = addMonths(mo, 1)) {
-        const budget = budgetOf(mo, code)
+        const budget = totalOf(mo, code)
         if (budget == null) continue
         carry += budget - spent(mo, code)
       }
       return carry
     }
-    return { monthly, defaults, budgetOf, spent, carried, rollover }
+    return { monthly, defaults, budgetOf, totalOf, spent, carried, rollover }
   }
+  type BudgetLine = ReturnType<typeof budgetRows>["rows"][number]
   function budgetRows(m: Computed, month: string) {
     const book = budgetBook(m)
     const expense = m.categories.filter(
@@ -1392,29 +1481,48 @@ export function createApi(model: Model) {
           0
         ) / 3
       )
+    const rows = expense.map((x) => {
+      const budget = book.budgetOf(month, x.code) ?? null
+      const total = book.totalOf(month, x.code)
+      return {
+        code: x.code,
+        label: x.label,
+        parent: x.parent,
+        custom: x.custom,
+        /** This category's own amount, the one you edit. */
+        budgetCents: budget,
+        /** Own amount plus the categories inside it. */
+        totalBudgetCents: total,
+        source: book.monthly.get(month)?.has(x.code)
+          ? ("month" as const)
+          : book.defaults.has(x.code)
+            ? ("default" as const)
+            : null,
+        defaultCents: book.defaults.get(x.code) ?? null,
+        rollover: Boolean(book.rollover[x.code]),
+        rolloverCents: total == null ? 0 : book.carried(month, x.code),
+        /** Includes the categories inside it. */
+        spentCents: book.spent(month, x.code),
+        lastMonthCents: book.spent(addMonths(month, -1), x.code),
+        averageCents: avg3(x.code),
+      }
+    })
+    // Each dollar once: only top-level categories add up.
+    let budgetedCents = 0
+    let spentCents = 0
+    let unbudgetedCents = 0
+    for (const r of rows) {
+      if (r.parent) continue
+      if (r.totalBudgetCents == null) unbudgetedCents += r.spentCents
+      else {
+        budgetedCents += r.totalBudgetCents + r.rolloverCents
+        spentCents += r.spentCents
+      }
+    }
     return {
       incomeCents: monthlyFlows(m, [month])[0].incomeCents,
-      rows: expense.map((x) => {
-        const budget = book.budgetOf(month, x.code) ?? null
-        return {
-          code: x.code,
-          label: x.label,
-          parent: x.parent,
-          custom: x.custom,
-          budgetCents: budget,
-          source: book.monthly.get(month)?.has(x.code)
-            ? "month"
-            : book.defaults.has(x.code)
-              ? "default"
-              : null,
-          defaultCents: book.defaults.get(x.code) ?? null,
-          rollover: Boolean(book.rollover[x.code]),
-          rolloverCents: budget == null ? 0 : book.carried(month, x.code),
-          spentCents: book.spent(month, x.code),
-          lastMonthCents: book.spent(addMonths(month, -1), x.code),
-          averageCents: avg3(x.code),
-        }
-      }),
+      totals: { budgetedCents, spentCents, unbudgetedCents },
+      rows,
     }
   }
   api.get("/budgets/history", (c) => {
@@ -1426,14 +1534,16 @@ export function createApi(model: Model) {
     const months = monthsBetween(addMonths(end, -(count - 1)), end)
     const codes = code
       ? [code]
-      : m.categories.filter((x) => x.group === "expense").map((x) => x.code)
+      : m.categories
+          .filter((x) => x.group === "expense" && !x.parent)
+          .map((x) => x.code)
     return c.json({
       category: code ?? null,
       months: months.map((month) => {
         let budgetCents = 0
         let spentCents = 0
         for (const k of codes) {
-          const b = book.budgetOf(month, k)
+          const b = book.totalOf(month, k)
           if (b == null) continue
           budgetCents += b
           spentCents += book.spent(month, k)
@@ -1473,7 +1583,7 @@ export function createApi(model: Model) {
     const month = isMonth(c.req.query("month"))
       ? c.req.query("month")!
       : monthOf(m.today)
-    const { rows, incomeCents } = budgetRows(m, month)
+    const { rows, incomeCents, totals } = budgetRows(m, month)
     const day =
       month === monthOf(m.today)
         ? Number(m.today.slice(8, 10))
@@ -1485,6 +1595,7 @@ export function createApi(model: Model) {
       current: monthOf(m.today),
       elapsed: day / Number(monthEnd(month).slice(8, 10)),
       incomeCents,
+      totals,
       rows,
     })
   })

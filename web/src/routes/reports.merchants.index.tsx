@@ -27,6 +27,7 @@ import { SearchIcon } from "lucide-react"
 import { z } from "zod"
 import {
   EmptyState,
+  InfoTip,
   Loading,
   MerchantMark,
   RangeSelect,
@@ -41,12 +42,7 @@ export const Route = createFileRoute("/reports/merchants/")({
   validateSearch: z.object({
     range: z.enum(["1m", "3m", "6m", "ytd", "1y", "all"]).optional(),
   }),
-  staticData: {
-    crumbs: [
-      { label: "Reports", to: "/reports" },
-      { label: "Merchants", to: "/reports/merchants" },
-    ],
-  },
+  staticData: { crumbs: [{ label: "Reports", to: "/reports" }] },
   component: Merchants,
 })
 
@@ -94,9 +90,11 @@ function Merchants() {
           />
         </InputGroup>
         {q.data ? (
-          <PageMeta>
+          <PageMeta className="gap-x-0.5">
             <span>{pluralize(q.data.rows.length, "merchant")}</span>
-            <span>Spending only</span>
+            <InfoTip label="About this list">
+              Purchases only; income, refunds and transfers are left out.
+            </InfoTip>
           </PageMeta>
         ) : null}
       </div>
@@ -104,7 +102,16 @@ function Merchants() {
         {!q.data ? (
           <Loading rows={10} className="p-4" />
         ) : rows.length ? (
-          <Table>
+          <Table className="md:table-fixed">
+            {/* Number columns get room; the merchant takes the rest. */}
+            <colgroup>
+              <col />
+              <col className="hidden md:table-column md:w-44" />
+              <col className="hidden sm:table-column sm:w-18" />
+              <col className="hidden sm:table-column sm:w-26" />
+              <col className="hidden md:table-column md:w-22" />
+              <col className="w-28" />
+            </colgroup>
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-5">Merchant</TableHead>
@@ -124,17 +131,17 @@ function Merchants() {
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.key}>
-                  <TableCell className="w-full max-w-0 pl-5">
+                  <TableCell className="max-w-0 pl-5 whitespace-normal">
                     <Link
                       to="/reports/merchants/$key"
                       params={{ key: r.key }}
                       className="flex min-w-0 items-center gap-3 font-medium underline-offset-4 hover:underline"
                     >
                       <MerchantMark name={r.name} className="size-7" />
-                      <span className="truncate">{r.name}</span>
+                      <span className="line-clamp-2 md:truncate">{r.name}</span>
                     </Link>
                   </TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">
+                  <TableCell className="hidden truncate text-muted-foreground md:table-cell">
                     {r.categoryLabel}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">

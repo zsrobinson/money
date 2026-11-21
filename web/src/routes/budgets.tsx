@@ -32,7 +32,14 @@ import {
 } from "lucide-react"
 import { z } from "zod"
 import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
-import { Loading, Meter, SectionCard, Stat, StatRow } from "@/components/money"
+import {
+  InfoTip,
+  Loading,
+  Meter,
+  SectionCard,
+  Stat,
+  StatRow,
+} from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
 import {
   addMonths,
@@ -89,17 +96,23 @@ function Budgets() {
   const go = (by: number) =>
     d &&
     void navigate({ search: { month: addMonths(d.month, by) }, replace: true })
-  const budgeted = d?.rows.filter((r) => r.budgetCents != null) ?? []
-  const other =
-    d?.rows.filter((r) => r.budgetCents == null && r.spentCents > 0) ?? []
-  const unused =
-    d?.rows.filter((r) => r.budgetCents == null && r.spentCents <= 0) ?? []
-  const totalBudget = budgeted.reduce(
-    (sum, r) => sum + (r.budgetCents ?? 0) + r.rolloverCents,
-    0
+  // Top-level categories, each followed by the categories inside it.
+  const rows = d?.rows ?? []
+  const tree = (top: BudgetRow[]) =>
+    top.flatMap((r) => [r, ...rows.filter((x) => x.parent === r.code)])
+  const tops = rows.filter((r) => !r.parent)
+  const budgeted = tree(tops.filter((r) => r.totalBudgetCents != null))
+  const other = tree(
+    tops
+      .filter((r) => r.totalBudgetCents == null)
+      .sort((a, b) => b.spentCents - a.spentCents)
   )
-  const totalSpent = budgeted.reduce((sum, r) => sum + r.spentCents, 0)
-  const unbudgetedSpent = other.reduce((sum, r) => sum + r.spentCents, 0)
+  const totals = d?.totals ?? {
+    budgetedCents: 0,
+    spentCents: 0,
+    unbudgetedCents: 0,
+  }
+  const left = totals.budgetedCents - totals.spentCents
   return (
     <Page>
       <PageHeader>
@@ -157,7 +170,9 @@ function Budgets() {
       ) : (
         <PageStack>
           <StatRow>
-            <Stat label="Budgeted">{money(totalBudget, { whole: true })}</Stat>
+            <Stat label="Budgeted">
+              {money(totals.budgetedCents, { whole: true })}
+            </Stat>
             <Stat
               label="Spent"
               detail={
@@ -166,20 +181,18 @@ function Budgets() {
                   : undefined
               }
             >
-              {money(totalSpent, { whole: true })}
+              {money(totals.spentCents, { whole: true })}
             </Stat>
-            <Stat label={totalBudget - totalSpent >= 0 ? "Left" : "Over"}>
-              <span
-                className={totalBudget - totalSpent < 0 ? "text-negative" : ""}
-              >
-                {money(Math.abs(totalBudget - totalSpent), { whole: true })}
+            <Stat label={left >= 0 ? "Left" : "Over"}>
+              <span className={left < 0 ? "text-negative" : ""}>
+                {money(Math.abs(left), { whole: true })}
               </span>
             </Stat>
             <Stat
               label="Income"
               detail={
-                unbudgetedSpent
-                  ? `${money(unbudgetedSpent, { whole: true })} spent outside budgets`
+                totals.unbudgetedCents
+                  ? `${money(totals.unbudgetedCents, { whole: true })} spent outside budgets`
                   : undefined
               }
             >
@@ -187,21 +200,17 @@ function Budgets() {
             </Stat>
           </StatRow>
           <Card className="gap-0 py-0">
-            <div className="flex items-center justify-between border-b px-5 py-3">
+            <div className="flex items-center gap-1 border-b px-5 py-3">
               <span className="font-heading text-base font-medium">
                 Budgets
               </span>
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                Amounts change this month only; use the menu to set a default.
-              </span>
+              <InfoTip label="About budgets">
+                A category’s budget and spending include the categories inside
+                it. Amounts change this month only; use a row’s menu to set a
+                default for every month.
+              </InfoTip>
             </div>
-            <div className="hidden grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_7.5rem_2rem] gap-x-3 border-b px-5 py-1.5 text-xs text-muted-foreground sm:grid">
-              <span>Category</span>
-              <span>Progress</span>
-              <span className="text-right">Spent</span>
-              <span className="text-right">Budget</span>
-              <span />
-            </div>
+            <BudgetHeader />
             {budgeted.length ? (
               <ul className="flex flex-col divide-y divide-border/70">
                 {budgeted.map((r) => (
@@ -219,13 +228,14 @@ function Budgets() {
               </p>
             )}
           </Card>
-          {other.length || unused.length ? (
+          {other.length ? (
             <Card className="gap-0 py-0">
               <div className="border-b px-5 py-3 font-heading text-base font-medium">
                 Not budgeted
               </div>
+              <BudgetHeader />
               <ul className="flex flex-col divide-y divide-border/70">
-                {[...other, ...unused].map((r) => (
+                {other.map((r) => (
                   <BudgetLine
                     key={`${d.month}-${r.code}-${r.budgetCents}`}
                     row={r}
@@ -263,6 +273,24 @@ function Budgets() {
   )
 }
 
+// Category, progress, spent, budget, menu; a phone moves progress below.
+const GRID =
+  "grid grid-cols-[minmax(0,1fr)_auto_6.5rem_2rem] items-center gap-x-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_7rem_7.5rem_2rem]"
+
+function BudgetHeader() {
+  return (
+    <div
+      className={`${GRID} border-b px-5 py-1.5 text-xs text-muted-foreground`}
+    >
+      <span>Category</span>
+      <span className="hidden sm:block">Progress</span>
+      <span className="text-right">Spent</span>
+      <span className="text-right">Budget</span>
+      <span />
+    </div>
+  )
+}
+
 function BudgetLine({
   row: r,
   month,
@@ -294,16 +322,18 @@ function BudgetLine({
         v.enabled ? "Leftover now rolls over" : "Rollover turned off",
     }
   )
-  const available = (r.budgetCents ?? 0) + r.rolloverCents
+  const budgeted = r.totalBudgetCents != null
+  const available = (r.totalBudgetCents ?? 0) + r.rolloverCents
   const ratio =
     available > 0 ? r.spentCents / available : r.spentCents > 0 ? 1 : 0
-  const over = r.budgetCents != null && r.spentCents > available
+  const over = budgeted && r.spentCents > available
+  // A parent's own amount plus its children's, said when they differ.
+  const ofTotal =
+    budgeted && r.totalBudgetCents !== r.budgetCents
+      ? money(available, { whole: true })
+      : null
   const ahead =
-    r.budgetCents != null &&
-    !over &&
-    elapsed > 0 &&
-    elapsed < 1 &&
-    ratio > elapsed + 0.1
+    budgeted && !over && elapsed > 0 && elapsed < 1 && ratio > elapsed + 0.1
   const commit = () => {
     const cents =
       value.trim() === ""
@@ -314,16 +344,18 @@ function BudgetLine({
     put.mutate({ amountCents: cents })
   }
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_7.5rem_auto] items-center gap-x-3 gap-y-1.5 px-5 py-2.5 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_7rem_7.5rem_2rem]">
+    <li className={`${GRID} gap-y-1.5 px-5 py-2.5`}>
       <Link
         to="/reports/categories/$code"
         params={{ code: r.code }}
-        className={`min-w-0 truncate text-sm font-medium underline-offset-4 hover:underline ${r.parent ? "sm:pl-4" : ""}`}
+        className={`line-clamp-2 min-w-0 text-sm break-words underline-offset-4 hover:underline ${r.parent ? "pl-4 text-muted-foreground" : "font-medium"}`}
       >
         {r.label}
       </Link>
-      <div className="col-span-3 row-start-2 flex flex-col gap-1 sm:col-span-1 sm:row-start-auto">
-        {r.budgetCents != null ? (
+      <div
+        className={`col-span-4 row-start-2 flex flex-col gap-1 sm:col-span-1 sm:row-start-auto ${r.parent ? "pl-4 sm:pl-0" : ""}`}
+      >
+        {budgeted ? (
           <Meter
             label={`${r.label} budget used`}
             value={ratio}
@@ -331,21 +363,22 @@ function BudgetLine({
           />
         ) : null}
         <span className="text-xs text-muted-foreground">
-          {r.budgetCents == null ? (
+          {!budgeted ? (
             `${money(r.averageCents, { whole: true })} average`
           ) : over ? (
             <span className="text-negative">
               {money(r.spentCents - available, { whole: true })} over
+              {ofTotal ? ` ${ofTotal}` : ""}
             </span>
           ) : (
-            `${money(available - r.spentCents, { whole: true })} left${ahead ? " · ahead of pace" : ""}`
+            `${money(available - r.spentCents, { whole: true })} left${ofTotal ? ` of ${ofTotal}` : ""}${ahead ? " · ahead of pace" : ""}`
           )}
           {r.rolloverCents
             ? ` · ${money(r.rolloverCents, { sign: true, whole: true })} rolled over`
             : ""}
         </span>
       </div>
-      <span className="hidden text-right text-sm tabular-nums sm:block">
+      <span className="text-right text-sm tabular-nums">
         {money(r.spentCents, { whole: true })}
       </span>
       <InputGroup className="h-8">

@@ -60,12 +60,3 @@ export function ReportNav({ range }: { range: Range }) {
     </nav>
   )
 }
-
-/** Months of monthly history a range covers, for charts drawn by month. */
-export function rangeMonths(range: Range, today: string) {
-  if (range === "1m" || range === "3m") return 3
-  if (range === "6m") return 6
-  if (range === "ytd") return Math.max(3, Number(today.slice(5, 7)))
-  if (range === "1y") return 12
-  return 24
-}

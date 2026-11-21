@@ -476,7 +476,8 @@ test("rollover carries unspent budget forward and history compares budget to act
   assert.equal(row.rollover, true)
   assert.equal(row.rolloverCents, carry)
   assert.equal(history.length, 6)
-  assert.ok(history.every((h) => h.budgetCents === 9000))
+  // Entertainment's budget includes Subscriptions inside it: 9000 + 3000.
+  assert.ok(history.every((h) => h.budgetCents === 12000))
   await call("PUT", "/budgets/rollover/entertainment", { enabled: false })
   const after = (await call("GET", `/budgets?month=${month}`)).json.rows.find(
     (r: { code: string }) => r.code === "entertainment"
@@ -484,6 +485,196 @@ test("rollover carries unspent budget forward and history compares budget to act
   assert.equal(after.rolloverCents, 0)
   const total = (await call("GET", "/budgets/history?months=3")).json.months
   assert.ok(total.every((h: { budgetCents: number }) => h.budgetCents > 0))
+})
+
+test("a parent includes its children everywhere; grand totals count each dollar once", async () => {
+  const m = model.get()
+  const month = FIXTURE_TODAY.slice(0, 7)
+  const own = (codes: string[], from: string, to: string) =>
+    m.allocations
+      .filter(
+        (a) =>
+          codes.includes(a.category) &&
+          !a.txn.pending &&
+          a.txn.date >= from &&
+          a.txn.date <= to
+      )
+      .reduce((s, a) => s - a.amountCents, 0)
+  const monthFrom = `${month}-01`
+  const food = own(["food", "cat_coffee"], monthFrom, FIXTURE_TODAY)
+  const coffee = own(["cat_coffee"], monthFrom, FIXTURE_TODAY)
+  assert.ok(coffee > 0, "the fixture has coffee spending this month")
+  assert.ok(food > coffee)
+
+  // Cash flow: parent row includes the child; top-level rows add up to the month.
+  const cash = (await call("GET", `/cashflow?month=${month}`)).json
+  const cashRow = (code: string) =>
+    cash.spending.find((r: { code: string }) => r.code === code)
+  assert.equal(cashRow("food").cents, food)
+  assert.equal(cashRow("cat_coffee").cents, coffee)
+  const monthSpend = cash.months.at(-1).spendingCents
+  assert.equal(
+    cash.spending
+      .filter((r: { parent: string | null }) => !r.parent)
+      .reduce((s: number, r: { cents: number }) => s + r.cents, 0),
+    monthSpend
+  )
+
+  // Dashboard donut: the same Food figure, and slices sum to spending.
+  const summary = (await call("GET", "/summary")).json
+  const top = summary.month.top as { code: string; cents: number }[]
+  assert.equal(top.find((r) => r.code === "food")!.cents, food)
+  assert.equal(
+    top.reduce((s, r) => s + r.cents, 0),
+    summary.month.spendingCents
+  )
+  assert.equal(summary.month.spendingCents, monthSpend)
+
+  // Budgets: same Food spending; parent budget is own plus children; totals once.
+  const budgets = (await call("GET", `/budgets?month=${month}`)).json
+  const row = (code: string) =>
+    budgets.rows.find((r: { code: string }) => r.code === code)
+  assert.equal(row("food").spentCents, food)
+  assert.equal(row("cat_coffee").spentCents, coffee)
+  assert.equal(
+    row("food").totalBudgetCents,
+    row("food").budgetCents + row("cat_coffee").budgetCents
+  )
+  const ownBudgets = budgets.rows.reduce(
+    (s: number, r: { budgetCents: number | null }) => s + (r.budgetCents ?? 0),
+    0
+  )
+  assert.equal(budgets.totals.budgetedCents, ownBudgets)
+  assert.equal(
+    budgets.totals.spentCents + budgets.totals.unbudgetedCents,
+    monthSpend
+  )
+  // The dashboard card shows the same totals as the Budgets page.
+  assert.equal(summary.budget.budgetedCents, budgets.totals.budgetedCents)
+  assert.equal(summary.budget.spentCents, budgets.totals.spentCents)
+  const foodCard = summary.budget.rows.find(
+    (r: { code: string }) => r.code === "food"
+  )
+  if (foodCard)
+    assert.deepEqual(
+      foodCard.children.map((r: { code: string }) => r.code),
+      ["cat_coffee"]
+    )
+
+  // Category detail: this month matches the other pages.
+  const detail = (await call("GET", "/reports/categories/food")).json
+  assert.equal(detail.monthly.at(-1).cents, food)
+})
+
+test("reports cover the same full months on every tab and agree on totals", async () => {
+  const m = model.get()
+  const current = FIXTURE_TODAY.slice(0, 7)
+  for (const range of ["1m", "3m", "6m", "1y"]) {
+    const cats = (await call("GET", `/reports/categories?range=${range}`)).json
+    const merchants = (await call("GET", `/reports/merchants?range=${range}`))
+      .json
+    const trends = (await call("GET", `/reports/trends?range=${range}`)).json
+    const n = { "1m": 1, "3m": 3, "6m": 6, "1y": 12 }[range]
+    assert.equal(cats.months.length, n)
+    assert.deepEqual(trends.months, cats.months)
+    assert.ok(!cats.months.includes(current), "the month in progress is out")
+    assert.equal(cats.from, `${cats.months[0]}-01`)
+    assert.equal(merchants.from, cats.from)
+    assert.equal(merchants.to, cats.to)
+    // Same spending total by category and by month.
+    const trendSpend = trends.rows.reduce(
+      (s: number, r: { spendingCents: number }) => s + r.spendingCents,
+      0
+    )
+    assert.equal(cats.totalCents, trendSpend)
+    // Stacked categories plus everything else equal each month's spending.
+    for (const r of trends.rows) {
+      const parts = trends.categories.reduce(
+        (s: number, c: { code: string }) => s + Number(r[c.code] ?? 0),
+        r.other
+      )
+      assert.equal(parts, r.spendingCents)
+    }
+    // A parent row includes its child, and its months add up to its total.
+    const food = cats.rows.find((r: { code: string }) => r.code === "food")
+    const coffee = cats.rows.find(
+      (r: { code: string }) => r.code === "cat_coffee"
+    )
+    const ownFood = m.allocations
+      .filter(
+        (a) =>
+          a.category === "food" &&
+          !a.txn.pending &&
+          a.txn.date >= cats.from &&
+          a.txn.date <= cats.to
+      )
+      .reduce((s, a) => s - a.amountCents, 0)
+    assert.equal(food.cents, ownFood + (coffee?.cents ?? 0))
+    assert.equal(
+      food.monthly.reduce((s: number, x: number) => s + x, 0),
+      food.cents
+    )
+  }
+})
+
+test("money in and out leaves out transfers and hidden transactions", async () => {
+  const m = model.get()
+  const page = (await call("GET", "/transactions?status=all&limit=1")).json
+  let inflow = 0
+  let outflow = 0
+  for (const a of m.allocations) {
+    if (a.group === "transfer") continue
+    if (a.amountCents > 0) inflow += a.amountCents
+    else outflow += a.amountCents
+  }
+  assert.ok(m.allocations.some((a) => a.group === "transfer"))
+  assert.equal(page.inflowCents, inflow)
+  assert.equal(page.outflowCents, outflow)
+  // A day of nothing but a matched transfer has no day total.
+  const pair = m.txns.find(
+    (t) =>
+      t.transferPairId &&
+      m.txns.every(
+        (x) =>
+          x.date !== t.date ||
+          x.hidden ||
+          m.category(x.categoryEff).group === "transfer"
+      )
+  )
+  if (pair) {
+    const day = (
+      await call("GET", `/transactions?from=${pair.date}&to=${pair.date}`)
+    ).json
+    assert.equal(day.dayTotals[pair.date], undefined)
+  }
+  // The dashboard leaves both halves of a matched transfer off recent activity.
+  const recent = (await call("GET", "/summary")).json.recent
+  assert.ok(
+    recent.every((t: { transferPairId: string | null }) => !t.transferPairId)
+  )
+})
+
+test("a rule's matches open as the same set of transactions", async () => {
+  const match = { merchant_contains: "coffee" }
+  const preview = (await call("POST", "/rules/preview", { match })).json
+  const list = (
+    await call(
+      "GET",
+      `/transactions?status=all&limit=1&match=${encodeURIComponent(JSON.stringify(match))}`
+    )
+  ).json
+  assert.ok(preview.total > 0)
+  assert.equal(list.total, preview.total)
+  // A malformed match is ignored rather than failing the page.
+  assert.equal((await call("GET", "/transactions?match=%7Bnope")).status, 200)
+})
+
+test("an account's money in and out carries its payments", async () => {
+  const card = model.get().accounts.find((a) => a.type === "credit")!
+  const d = (await call("GET", `/accounts/${card.id}`)).json
+  assert.ok(
+    d.flows.some((f: { transferInCents: number }) => f.transferInCents > 0)
+  )
 })
 
 test("closed accounts stop counting after their last balance", async () => {
@@ -554,10 +745,13 @@ test("sync requests are recorded per source and unknown sources 404", async () =
 test("transaction pages carry day totals across pages", async () => {
   const page = (await call("GET", "/transactions?limit=5")).json
   const day = page.items[0].date
-  const all = txns().filter((t) => t.date === day && !t.hidden)
+  const m = model.get()
+  const all = m.allocations.filter(
+    (a) => a.txn.date === day && a.group !== "transfer"
+  )
   assert.equal(
     page.dayTotals[day],
-    all.reduce((s, t) => s + t.amountCents, 0)
+    all.reduce((s, a) => s + a.amountCents, 0)
   )
 })
 

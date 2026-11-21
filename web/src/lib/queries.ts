@@ -5,6 +5,7 @@ import type {
   Account,
   AccountListItem,
   BudgetRow,
+  BudgetTotals,
   Category,
   Goal,
   Holding,
@@ -61,7 +62,7 @@ export const accountQuery = (id: string, range?: Range) =>
     range: Range
     series: { date: string; cents: number | null }[]
     estimated: boolean
-    flows: MonthFlow[]
+    flows: (MonthFlow & { transferInCents: number; transferOutCents: number })[]
     transactions: number
     recent: Txn[]
     holdings: number
@@ -127,7 +128,7 @@ export type CategoryReport = {
     cents: number
     count: number
     previousCents: number
-    monthly: (number | null)[]
+    monthly: number[]
   }[]
 }
 export const categoryReportQuery = (range: Range) =>
@@ -160,6 +161,7 @@ export const merchantReportQuery = (range: Range) =>
   q<{
     range: Range
     from: string
+    to: string
     rows: {
       key: string
       name: string
@@ -199,14 +201,17 @@ export const merchantDetailQuery = (key: string) =>
     ["money", "reports", "merchant", key],
     `/api/reports/merchants/${encodeURIComponent(key)}`
   )
-export const trendsQuery = (months: number) =>
+export const trendsQuery = (range: Range) =>
   q<{
+    range: Range
+    from: string
+    to: string
     months: string[]
     categories: { code: string; label: string }[]
     rows: Record<string, number | string>[]
   }>(
-    ["money", "reports", "trends", months],
-    `/api/reports/trends${query({ months })}`,
+    ["money", "reports", "trends", range],
+    `/api/reports/trends${query({ range })}`,
     {
       placeholderData: keepPreviousData,
     }
@@ -217,6 +222,7 @@ export const budgetsQuery = (month?: string) =>
     current: string
     elapsed: number
     incomeCents: number
+    totals: BudgetTotals
     rows: BudgetRow[]
   }>(["money", "budgets", month], `/api/budgets${query({ month })}`, {
     placeholderData: keepPreviousData,

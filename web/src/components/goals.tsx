@@ -21,7 +21,7 @@ import {
   InputGroupInput,
 } from "@zsrobinson/shell/ui/input-group"
 import { ToggleGroup, ToggleGroupItem } from "@zsrobinson/shell/ui/toggle-group"
-import { SectionCard } from "@/components/money"
+import { InfoTip, SectionCard } from "@/components/money"
 import { DatePicker } from "@/components/pickers"
 import { money } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
@@ -90,7 +90,38 @@ export function GoalForm({ goal }: { goal?: Goal }) {
     .reduce((s, a) => s + Math.abs(a.balanceCents ?? 0), 0)
   return (
     <FormStack>
-      <SectionCard title={goal ? "Edit goal" : "Details"}>
+      <SectionCard
+        title={goal ? "Edit goal" : "Details"}
+        footer={
+          <>
+            {goal ? (
+              <ConfirmAction
+                trigger={
+                  <Button variant="ghost" className="mr-auto text-destructive">
+                    Delete goal
+                  </Button>
+                }
+                title={`Delete ${goal.name}?`}
+                confirmLabel="Delete goal"
+                destructive
+                onConfirm={() => remove.mutateAsync()}
+              >
+                Your accounts and transactions are unchanged.
+              </ConfirmAction>
+            ) : (
+              <Button variant="outline" onClick={() => done()}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              disabled={create.isPending || update.isPending}
+              onClick={submit}
+            >
+              {goal ? "Save goal" : "Create goal"}
+            </Button>
+          </>
+        }
+      >
         <FieldGroup className="@container">
           <Field data-invalid={tried && !!errors.name}>
             <FieldLabel htmlFor="goal-name">Name</FieldLabel>
@@ -137,16 +168,18 @@ export function GoalForm({ goal }: { goal?: Goal }) {
               ) : null}
             </Field>
             <Field>
-              <FieldLabel htmlFor="goal-date">Target date</FieldLabel>
+              <span className="flex items-center gap-0.5">
+                <FieldLabel htmlFor="goal-date">Target date</FieldLabel>
+                <InfoTip label="About the target date">
+                  Optional. It decides whether the goal is on track.
+                </InfoTip>
+              </span>
               <DatePicker
                 id="goal-date"
                 value={date}
                 placeholder="No date"
                 onChange={setDate}
               />
-              <FieldDescription>
-                Optional. Used to tell whether you are on track.
-              </FieldDescription>
             </Field>
           </div>
           <FieldSet data-invalid={tried && !!errors.accounts}>
@@ -195,34 +228,6 @@ export function GoalForm({ goal }: { goal?: Goal }) {
           </FieldSet>
         </FieldGroup>
       </SectionCard>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {goal ? (
-          <ConfirmAction
-            trigger={
-              <Button variant="ghost" className="mr-auto text-destructive">
-                Delete goal
-              </Button>
-            }
-            title={`Delete ${goal.name}?`}
-            confirmLabel="Delete goal"
-            destructive
-            onConfirm={() => remove.mutateAsync()}
-          >
-            Your accounts and transactions are unchanged.
-          </ConfirmAction>
-        ) : null}
-        {goal ? null : (
-          <Button variant="outline" onClick={() => done()}>
-            Cancel
-          </Button>
-        )}
-        <Button
-          disabled={create.isPending || update.isPending}
-          onClick={submit}
-        >
-          {goal ? "Save goal" : "Create goal"}
-        </Button>
-      </div>
     </FormStack>
   )
 }

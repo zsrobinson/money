@@ -18,7 +18,7 @@ import {
   PlusIcon,
 } from "lucide-react"
 import { EmptyState, Loading } from "@/components/money"
-import { describeRule, RulesHelp } from "@/components/rules"
+import { ruleParts, RulesHelp } from "@/components/rules"
 import { useCategoryLabels } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import { pluralize } from "@/lib/format"
@@ -98,11 +98,23 @@ function Rules() {
                   params={{ id: r.id }}
                   className="flex min-h-10 min-w-0 flex-1 flex-col justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span
-                    className={`line-clamp-2 text-sm ${r.enabled ? "" : "text-muted-foreground"}`}
-                  >
-                    {describeRule(r, label, accountName)}
-                  </span>
+                  {(() => {
+                    const p = ruleParts(r, label, accountName)
+                    return (
+                      <>
+                        <span
+                          className={`text-sm ${r.enabled ? "" : "text-muted-foreground"}`}
+                        >
+                          {p.when}
+                        </span>
+                        <span
+                          className={`text-sm font-medium ${r.enabled ? "" : "text-muted-foreground"}`}
+                        >
+                          {p.then}
+                        </span>
+                      </>
+                    )
+                  })()}
                   <span className="text-xs text-muted-foreground">
                     {r.enabled
                       ? `${pluralize(r.matches ?? 0, "transaction")} match`

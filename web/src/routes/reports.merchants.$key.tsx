@@ -5,8 +5,6 @@ import {
   PageActions,
   PageGrid,
   PageHeader,
-  PageMeta,
-  PageStack,
   PageTitle,
 } from "@zsrobinson/shell"
 import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
@@ -18,8 +16,6 @@ import {
   Loading,
   MerchantMark,
   SectionCard,
-  Stat,
-  StatRow,
   CardLink,
 } from "@/components/money"
 import { TxnRows } from "@/components/transactions"
@@ -30,7 +26,6 @@ import {
   fullDate,
   money,
   monthEpoch,
-  shortDate,
   moneyTick,
 } from "@/lib/format"
 import { merchantDetailQuery } from "@/lib/queries"
@@ -60,18 +55,6 @@ function MerchantDetail() {
           />
           <div className="flex min-w-0 flex-col">
             <PageTitle className="truncate">{d?.name ?? "Merchant"}</PageTitle>
-            {d ? (
-              <PageMeta>
-                <Link
-                  to="/reports/categories/$code"
-                  params={{ code: d.category }}
-                  className="underline-offset-4 hover:underline"
-                >
-                  {d.categoryLabel}
-                </Link>
-                <span>Since {fullDate(d.first)}</span>
-              </PageMeta>
-            ) : null}
           </div>
         </div>
         <PageActions>
@@ -99,92 +82,96 @@ function MerchantDetail() {
         <Loading rows={8} />
       ) : (
         <>
-          <StatRow>
-            <Stat
-              label={d.totalCents < 0 ? "Received" : "Spent"}
-              detail="all time"
-            >
-              {money(Math.abs(d.totalCents), { whole: true })}
-            </Stat>
-            <Stat label="Transactions">{d.count}</Stat>
-            <Stat label="Average">
-              {money(Math.abs(d.totalCents) / Math.max(1, d.count))}
-            </Stat>
-            <Stat label="Last">{shortDate(d.last)}</Stat>
-          </StatRow>
-          <PageGrid layout="wide">
-            <PageStack>
-              <SectionCard title="Last 12 months">
-                <TrendChart
-                  kind="bar"
-                  label={`${d.name} by month`}
-                  data={d.monthly.map((m) => ({
-                    time: monthEpoch(m.month),
-                    amount: Math.abs(m.cents) / 100,
-                  }))}
-                  config={{
-                    amount: {
-                      label: d.totalCents < 0 ? "Received" : "Spent",
-                      color: "var(--chart-1)",
-                    },
-                  }}
-                  format={(v) => money(Math.round(v * 100), { whole: true })}
-                  formatTime={epochMonthYear}
-                  formatTick={moneyTick}
-                  className="h-48"
-                />
-              </SectionCard>
-              <SectionCard
-                title="Transactions"
-                flush
-                action={
-                  <CardLink to="/transactions" search={{ merchant: key }}>
-                    All {d.count}
-                  </CardLink>
-                }
-              >
-                <TxnRows
-                  items={d.transactions.slice(0, 15)}
-                  primary="account"
-                />
-              </SectionCard>
-            </PageStack>
-            <SectionCard title="Recurring">
-              {d.recurring ? (
-                <DetailList>
-                  <DetailRow label="Repeats">
-                    {CADENCE[d.recurring.cadence] ?? d.recurring.cadence}
-                  </DetailRow>
-                  <DetailRow label="Usual amount">
-                    {money(Math.abs(d.recurring.amountCents))}
-                  </DetailRow>
-                  <DetailRow label="Next expected">
-                    {d.recurring.status === "active"
-                      ? fullDate(d.recurring.nextDate)
-                      : "Not expected"}
-                  </DetailRow>
-                  <DetailRow label="Status">
-                    <Link
-                      to="/recurring"
-                      className="underline-offset-4 hover:underline"
-                    >
+          <PageGrid layout="wide" className="items-stretch">
+            <SectionCard title="Last 12 months">
+              <TrendChart
+                kind="bar"
+                label={`${d.name} by month`}
+                data={d.monthly.map((m) => ({
+                  time: monthEpoch(m.month),
+                  amount: Math.abs(m.cents) / 100,
+                }))}
+                config={{
+                  amount: {
+                    label: d.totalCents < 0 ? "Received" : "Spent",
+                    color: "var(--chart-1)",
+                  },
+                }}
+                format={(v) => money(Math.round(v * 100), { whole: true })}
+                formatTime={epochMonthYear}
+                formatTick={moneyTick}
+                className="h-56"
+              />
+            </SectionCard>
+            <SectionCard title="Details" fill>
+              <DetailList>
+                <DetailRow label="Category">
+                  <Link
+                    to="/reports/categories/$code"
+                    params={{ code: d.category }}
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {d.categoryLabel}
+                  </Link>
+                </DetailRow>
+                <DetailRow
+                  label={
+                    d.totalCents < 0 ? "Received, all time" : "Spent, all time"
+                  }
+                >
+                  {money(Math.abs(d.totalCents), { whole: true })}
+                </DetailRow>
+                <DetailRow label="Transactions">{d.count}</DetailRow>
+                <DetailRow label="Average">
+                  {money(Math.abs(d.totalCents) / Math.max(1, d.count))}
+                </DetailRow>
+                <DetailRow label="First">{fullDate(d.first)}</DetailRow>
+                <DetailRow label="Last">{fullDate(d.last)}</DetailRow>
+                <DetailRow label="Repeats">
+                  {d.recurring
+                    ? (CADENCE[d.recurring.cadence] ?? d.recurring.cadence)
+                    : "No regular pattern"}
+                </DetailRow>
+                {d.recurring ? (
+                  <>
+                    <DetailRow label="Usual amount">
+                      {money(Math.abs(d.recurring.amountCents))}
+                    </DetailRow>
+                    <DetailRow label="Next expected">
                       {d.recurring.status === "active"
-                        ? "Active"
-                        : d.recurring.status === "inactive"
-                          ? "Stopped"
-                          : d.recurring.status === "cancelled"
-                            ? "Cancelled"
-                            : "Ignored"}
-                    </Link>
-                  </DetailRow>
-                </DetailList>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No regular pattern found for this merchant.
-                </p>
-              )}
+                        ? fullDate(d.recurring.nextDate)
+                        : "Not expected"}
+                    </DetailRow>
+                    <DetailRow label="Status">
+                      <Link
+                        to="/recurring"
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {d.recurring.status === "active"
+                          ? "Active"
+                          : d.recurring.status === "inactive"
+                            ? "Stopped"
+                            : d.recurring.status === "cancelled"
+                              ? "Cancelled"
+                              : "Ignored"}
+                      </Link>
+                    </DetailRow>
+                  </>
+                ) : null}
+              </DetailList>
             </SectionCard>
           </PageGrid>
+          <SectionCard
+            title="Transactions"
+            flush
+            action={
+              <CardLink to="/transactions" search={{ merchant: key }}>
+                All {d.count}
+              </CardLink>
+            }
+          >
+            <TxnRows items={d.transactions.slice(0, 15)} secondary="account" />
+          </SectionCard>
         </>
       )}
     </Page>

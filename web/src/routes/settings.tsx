@@ -5,16 +5,27 @@ import { Page, PageHeader, PageStack, PageTitle } from "@zsrobinson/shell"
 import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zsrobinson/shell/ui/dropdown-menu"
+import {
   Field,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from "@zsrobinson/shell/ui/field"
 import { Input } from "@zsrobinson/shell/ui/input"
 import { Switch } from "@zsrobinson/shell/ui/switch"
-import { EyeIcon, EyeOffIcon, PlusIcon, Trash2Icon } from "lucide-react"
-import { Loading, SectionCard } from "@/components/money"
+import {
+  EllipsisIcon,
+  EyeIcon,
+  EyeOffIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react"
+import { InfoTip, Loading, SectionCard } from "@/components/money"
 import { Choice } from "@/components/pickers"
 import { SourceList } from "@/components/sources"
 import { usePageTitle } from "@/lib/crumb"
@@ -49,32 +60,15 @@ function SettingsPage() {
         <PageTitle>Settings</PageTitle>
       </PageHeader>
       <div className="grid items-start gap-4 lg:grid-cols-[11rem_minmax(0,1fr)]">
-        <nav
-          aria-label="Settings sections"
-          className="flex gap-1 overflow-x-auto lg:sticky lg:top-16 lg:flex-col"
-        >
-          {SECTIONS.map((s) => (
-            <Button
-              key={s.id}
-              variant="ghost"
-              size="sm"
-              className="justify-start text-muted-foreground"
-              render={<a href={`#${s.id}`} />}
-              nativeButton={false}
-            >
-              {s.label}
-            </Button>
-          ))}
-        </nav>
-        <PageStack className="max-w-3xl">
+        <SectionNav />
+        <PageStack>
           <Section id="connections">
-            <SectionCard title="Connections" flush>
+            <SectionCard
+              title="Connections"
+              flush
+              info="Connections sync on a schedule. Sync now asks for an early refresh of an existing connection; adding an institution happens on the server."
+            >
               <SourceList />
-              <p className="border-t px-5 py-3 text-xs text-muted-foreground">
-                Connections sync on a schedule. Sync now asks for an early
-                refresh of existing connections; adding an institution happens
-                on the server.
-              </p>
             </SectionCard>
           </Section>
           <Section id="preferences">
@@ -92,6 +86,44 @@ function SettingsPage() {
         </PageStack>
       </div>
     </Page>
+  )
+}
+
+/** Sections as a list beside the page, a row of links, or a menu on a phone. */
+function SectionNav() {
+  const [current, setCurrent] = useState(SECTIONS[0].id)
+  const go = (id: string) => {
+    setCurrent(id)
+    document.getElementById(id)?.scrollIntoView({ block: "start" })
+    history.replaceState(null, "", `#${id}`)
+  }
+  return (
+    <>
+      <Choice
+        aria-label="Settings section"
+        className="w-full sm:hidden"
+        value={current}
+        onChange={go}
+        options={SECTIONS.map((x) => ({ value: x.id, label: x.label }))}
+      />
+      <nav
+        aria-label="Settings sections"
+        className="hidden gap-1 sm:flex lg:sticky lg:top-16 lg:flex-col"
+      >
+        {SECTIONS.map((x) => (
+          <Button
+            key={x.id}
+            variant="ghost"
+            size="sm"
+            className="justify-start text-muted-foreground"
+            render={<a href={`#${x.id}`} />}
+            nativeButton={false}
+          >
+            {x.label}
+          </Button>
+        ))}
+      </nav>
+    </>
   )
 }
 
@@ -141,14 +173,14 @@ function Preferences() {
               checked={s.reviewNewTransactions}
               onCheckedChange={(v) => save.mutate({ reviewNewTransactions: v })}
             />
-            <div className="flex flex-col">
+            <span className="flex items-center gap-0.5">
               <FieldLabel htmlFor="pref-review">
                 Count new transactions for review
               </FieldLabel>
-              <FieldDescription>
+              <InfoTip label="About review counts">
                 Shows the review count beside Transactions.
-              </FieldDescription>
-            </div>
+              </InfoTip>
+            </span>
           </Field>
         </FieldGroup>
       )}
@@ -156,11 +188,11 @@ function Preferences() {
   )
 }
 
-const GROUP_LABEL = {
-  income: "Income",
-  expense: "Spending",
-  transfer: "Transfer",
-} as const
+const GROUPS = [
+  { group: "income", label: "Income" },
+  { group: "expense", label: "Spending" },
+  { group: "transfer", label: "Transfers" },
+] as const
 
 function Categories() {
   const categories = useQuery(categoriesQuery)
@@ -212,20 +244,31 @@ function Categories() {
           Add category
         </Button>
       </div>
-      <ul className="flex flex-col divide-y divide-border/70 border-t">
-        {list
-          .filter((c) => !c.parent)
-          .flatMap((c) => [c, ...list.filter((x) => x.parent === c.code)])
-          .map((c) => (
-            <CategoryRow key={c.code} category={c} />
-          ))}
-      </ul>
+      {GROUPS.map((g) => {
+        const tops = list.filter((c) => !c.parent && c.group === g.group)
+        if (!tops.length) return null
+        return (
+          <div key={g.group}>
+            <div className="border-y bg-muted/50 px-5 py-1.5 text-xs font-medium text-muted-foreground">
+              {g.label}
+            </div>
+            <ul className="flex flex-col divide-y divide-border/70">
+              {tops
+                .flatMap((c) => [c, ...list.filter((x) => x.parent === c.code)])
+                .map((c) => (
+                  <CategoryRow key={c.code} category={c} />
+                ))}
+            </ul>
+          </div>
+        )
+      })}
     </SectionCard>
   )
 }
 
 function CategoryRow({ category: c }: { category: Category }) {
   const [label, setLabel] = useState(c.label)
+  const [confirming, setConfirming] = useState(false)
   const patch = useSend<{ label?: string; hidden?: boolean }>(
     "PATCH",
     `/api/categories/${c.code}`,
@@ -242,7 +285,7 @@ function CategoryRow({ category: c }: { category: Category }) {
     >
       <Input
         aria-label={`Name for ${c.label}`}
-        className="h-8 min-w-0 flex-1 truncate border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-64"
+        className="h-8 min-w-0 flex-1 truncate border-transparent bg-transparent px-2 text-sm shadow-none hover:bg-muted/60 focus-visible:bg-background sm:max-w-72"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         onBlur={() =>
@@ -252,9 +295,12 @@ function CategoryRow({ category: c }: { category: Category }) {
         }
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       />
-      <span className="w-16 shrink-0 text-xs text-muted-foreground">
-        {c.parent ? "" : GROUP_LABEL[c.group]}
-      </span>
+      {c.hidden ? (
+        <EyeOffIcon
+          aria-label="Hidden"
+          className="size-4 shrink-0 text-muted-foreground"
+        />
+      ) : null}
       <Link
         to="/reports/categories/$code"
         params={{ code: c.code }}
@@ -262,38 +308,61 @@ function CategoryRow({ category: c }: { category: Category }) {
       >
         {pluralize(c.transactions, "transaction")}
       </Link>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="max-sm:ml-auto"
-        aria-label={c.hidden ? `Show ${c.label}` : `Hide ${c.label}`}
-        onClick={() => patch.mutate({ hidden: !c.hidden })}
-      >
-        {c.hidden ? <EyeOffIcon /> : <EyeIcon />}
-      </Button>
-      {c.custom ? (
-        <ConfirmAction
-          trigger={
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={`Delete ${c.label}`}
-            >
-              <Trash2Icon />
-            </Button>
-          }
-          title={`Delete ${c.label}?`}
-          confirmLabel="Delete category"
-          destructive
-          onConfirm={() => remove.mutateAsync()}
+      <RowMenu label={c.label}>
+        <DropdownMenuItem onClick={() => patch.mutate({ hidden: !c.hidden })}>
+          {c.hidden ? <EyeIcon /> : <EyeOffIcon />}
+          {c.hidden ? "Show in lists" : "Hide from lists"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={!c.custom}
+          onClick={() => setConfirming(true)}
         >
-          Only unused categories can be deleted. Move its transactions and rules
-          elsewhere first.
-        </ConfirmAction>
-      ) : (
-        <span className="size-7 shrink-0" aria-hidden />
-      )}
+          <Trash2Icon />
+          Delete
+        </DropdownMenuItem>
+      </RowMenu>
+      <ConfirmAction
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Delete ${c.label}?`}
+        confirmLabel="Delete category"
+        destructive
+        onConfirm={() => remove.mutateAsync()}
+      >
+        Only unused categories can be deleted. Move its transactions and rules
+        elsewhere first.
+      </ConfirmAction>
     </li>
+  )
+}
+
+/** The same menu at the end of every editable row. */
+function RowMenu({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="max-sm:ml-auto"
+            aria-label={`${label} options`}
+          />
+        }
+      >
+        <EllipsisIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -360,8 +429,7 @@ function Tags() {
         </ul>
       ) : (
         <p className="border-t px-5 py-3 text-sm text-muted-foreground">
-          Tags group transactions across categories, such as everything
-          reimbursable.
+          No tags yet.
         </p>
       )}
     </SectionCard>
@@ -370,6 +438,7 @@ function Tags() {
 
 function TagRow({ tag: t }: { tag: Tag }) {
   const [name, setName] = useState(t.name)
+  const [confirming, setConfirming] = useState(false)
   const patch = useSend<{ name?: string; hue?: string | null }>(
     "PATCH",
     `/api/tags/${t.id}`,
@@ -418,16 +487,18 @@ function TagRow({ tag: t }: { tag: Tag }) {
       >
         {pluralize(t.transactions, "transaction")}
       </Link>
+      <RowMenu label={t.name}>
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => setConfirming(true)}
+        >
+          <Trash2Icon />
+          Delete
+        </DropdownMenuItem>
+      </RowMenu>
       <ConfirmAction
-        trigger={
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={`Delete ${t.name}`}
-          >
-            <Trash2Icon />
-          </Button>
-        }
+        open={confirming}
+        onOpenChange={setConfirming}
         title={`Delete ${t.name}?`}
         confirmLabel="Delete tag"
         destructive
@@ -469,7 +540,7 @@ function Accounts() {
               className="flex min-w-0 flex-col underline-offset-4 hover:underline"
             >
               <span className="truncate text-sm font-medium">{a.name}</span>
-              <span className="truncate text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {a.institution}
                 {a.availability !== "available" ? " · Closed" : ""}
               </span>

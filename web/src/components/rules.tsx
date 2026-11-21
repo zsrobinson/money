@@ -6,7 +6,6 @@ import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
   FieldLegend,
@@ -16,12 +15,12 @@ import { Input } from "@zsrobinson/shell/ui/input"
 import { Switch } from "@zsrobinson/shell/ui/switch"
 import { Toggle } from "@zsrobinson/shell/ui/toggle"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@zsrobinson/shell/ui/tooltip"
-import { InfoIcon } from "lucide-react"
-import { EmptyState, Loading, SectionCard } from "@/components/money"
+  CardLink,
+  EmptyState,
+  InfoTip,
+  Loading,
+  SectionCard,
+} from "@/components/money"
 import { Choice } from "@/components/pickers"
 import {
   CategorySelect,
@@ -37,29 +36,24 @@ import type { Rule, RuleAction, RuleMatch, Txn } from "@/lib/types"
 /** How rules combine, behind an info icon beside the page title. */
 export function RulesHelp() {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="How rules apply"
-            className="text-muted-foreground"
-          />
-        }
-      >
-        <InfoIcon />
-      </TooltipTrigger>
-      <TooltipContent className="max-w-64">
-        Rules apply in order to past and future transactions. For each field the
-        first matching rule wins, and your own edits to a transaction always
-        win.
-      </TooltipContent>
-    </Tooltip>
+    <InfoTip label="How rules apply">
+      Rules apply in order to past and future transactions. For each field the
+      first matching rule wins, and your own edits to a transaction always win.
+    </InfoTip>
   )
 }
 
 export function describeRule(
+  r: Pick<Rule, "match" | "action">,
+  label: (code: string) => string,
+  accountName?: (id: string) => string
+) {
+  const { when, then } = ruleParts(r, label, accountName)
+  return `${when}, ${then.charAt(0).toLowerCase()}${then.slice(1)}`
+}
+
+/** A rule as "When …" and "Then …", for showing the action on its own line. */
+export function ruleParts(
   r: Pick<Rule, "match" | "action">,
   label: (code: string) => string,
   accountName?: (id: string) => string
@@ -88,7 +82,11 @@ export function describeRule(
   if (a.tags?.length) then.push(`add ${pluralize(a.tags.length, "tag")}`)
   if (a.mark_reviewed) then.push("mark reviewed")
   if (a.hide) then.push("hide")
-  return `When ${when.join(" and ")}, ${then.join(", ")}`
+  const action = then.join(", ")
+  return {
+    when: `When ${when.join(" and ")}`,
+    then: action.charAt(0).toUpperCase() + action.slice(1),
+  }
 }
 
 type Form = {
@@ -222,7 +220,13 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
         <SectionCard title="When a transaction matches">
           <FieldGroup className="@container">
             <Field>
-              <FieldLabel htmlFor="rule-merchant">Merchant</FieldLabel>
+              <span className="flex items-center gap-0.5">
+                <FieldLabel htmlFor="rule-merchant">Merchant</FieldLabel>
+                <InfoTip label="About merchant matching">
+                  Ignores case, accents and extra spaces, and uses the bank’s
+                  merchant name.
+                </InfoTip>
+              </span>
               <div className="flex gap-2">
                 <Choice
                   aria-label="Merchant match"
@@ -243,10 +247,6 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
                   onChange={(e) => set("merchant", e.target.value)}
                 />
               </div>
-              <FieldDescription>
-                Ignores case, accents and extra spaces, and uses the bank’s
-                merchant name.
-              </FieldDescription>
             </Field>
             <div className="grid gap-4 @lg:grid-cols-2">
               <Field>
@@ -310,7 +310,44 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
             </div>
           </FieldGroup>
         </SectionCard>
-        <SectionCard title="Then">
+        <SectionCard
+          title="Then"
+          footer={
+            <>
+              {rule ? (
+                <ConfirmAction
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      className="mr-auto text-destructive"
+                    >
+                      Delete rule
+                    </Button>
+                  }
+                  title="Delete this rule?"
+                  confirmLabel="Delete rule"
+                  destructive
+                  onConfirm={() => remove.mutateAsync()}
+                >
+                  Transactions it changed go back to their bank values unless
+                  you edited them yourself.
+                </ConfirmAction>
+              ) : null}
+              <Button
+                variant="outline"
+                onClick={() => void navigate({ to: "/rules" })}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={!hasMatch || !hasAction || saving}
+                onClick={submit}
+              >
+                {rule ? "Save rule" : "Create rule"}
+              </Button>
+            </>
+          }
+        >
           <FieldGroup className="@container">
             <div className="grid gap-4 @lg:grid-cols-2">
               <Field>
@@ -390,7 +427,17 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
       <SectionCard
         title="Matches"
         flush
-        className="lg:sticky lg:top-16 lg:row-span-2"
+        className="lg:sticky lg:top-16"
+        action={
+          hasMatch && preview.data?.total ? (
+            <CardLink
+              to="/transactions"
+              search={{ match: JSON.stringify(body.match), status: "all" }}
+            >
+              View all
+            </CardLink>
+          ) : undefined
+        }
       >
         {!hasMatch ? (
           <p className="px-5 pb-5 text-sm text-muted-foreground">
@@ -413,38 +460,9 @@ export function RuleForm({ initial, rule }: { initial: Form; rule?: Rule }) {
             />
           </>
         ) : (
-          <EmptyState title="Nothing matches yet">
-            The rule still applies to future transactions.
-          </EmptyState>
+          <EmptyState title="Nothing matches yet" />
         )}
       </SectionCard>
-      <div className="flex w-full max-w-3xl flex-wrap items-center justify-end gap-2">
-        {rule ? (
-          <ConfirmAction
-            trigger={
-              <Button variant="ghost" className="mr-auto text-destructive">
-                Delete rule
-              </Button>
-            }
-            title="Delete this rule?"
-            confirmLabel="Delete rule"
-            destructive
-            onConfirm={() => remove.mutateAsync()}
-          >
-            Transactions it changed go back to their bank values unless you
-            edited them yourself.
-          </ConfirmAction>
-        ) : null}
-        <Button
-          variant="outline"
-          onClick={() => void navigate({ to: "/rules" })}
-        >
-          Cancel
-        </Button>
-        <Button disabled={!hasMatch || !hasAction || saving} onClick={submit}>
-          {rule ? "Save rule" : "Create rule"}
-        </Button>
-      </div>
     </PageGrid>
   )
 }

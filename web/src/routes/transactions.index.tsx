@@ -30,7 +30,7 @@ import {
   XIcon,
 } from "lucide-react"
 import { z } from "zod"
-import { EmptyState, Loading } from "@/components/money"
+import { EmptyState, InfoTip, Loading } from "@/components/money"
 import { Choice, DatePicker } from "@/components/pickers"
 import { CategorySelect, ReviewDot, TxnRows } from "@/components/transactions"
 import { query } from "@/lib/api"
@@ -58,6 +58,8 @@ const search = z.object({
   account: z.string().optional(),
   category: z.string().optional(),
   merchant: z.string().optional(),
+  /** A rule's conditions, from its Matches list. */
+  match: z.string().optional(),
   tag: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -131,6 +133,7 @@ function Transactions() {
     account: s.account,
     category: s.category,
     merchant: s.merchant,
+    match: s.match,
     tag: s.tag,
     from: s.from,
     to: s.to,
@@ -218,7 +221,7 @@ function Transactions() {
             </InputGroupAddon>
             <InputGroupInput
               aria-label="Search transactions"
-              placeholder="Search merchant, note, category or account"
+              placeholder="Search transactions"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
@@ -363,9 +366,14 @@ function Transactions() {
               </span>{" "}
               in
             </span>
-            <span className="tabular-nums">
+            <span className="flex items-center gap-0.5 tabular-nums">
               {money(-list.data.outflowCents, { whole: true })} out
+              <InfoTip label="About these totals">
+                Transfers between your accounts and hidden transactions are left
+                out.
+              </InfoTip>
             </span>
+            {s.match ? <span>Matching a rule</span> : null}
             <span className="flex items-center gap-1.5">
               <ReviewDot /> needs review
             </span>

@@ -4,9 +4,15 @@ import {
   Card,
   CardAction,
   CardContent,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@zsrobinson/shell/ui/card"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@zsrobinson/shell/ui/tooltip"
 import { Skeleton } from "@zsrobinson/shell/ui/skeleton"
 import {
   Empty,
@@ -17,7 +23,7 @@ import {
 } from "@zsrobinson/shell/ui/empty"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { Link } from "@tanstack/react-router"
-import { ArrowRightIcon } from "lucide-react"
+import { ArrowRightIcon, InfoIcon } from "lucide-react"
 import { Choice } from "@/components/pickers"
 import { money, RANGE_OPTIONS } from "@/lib/format"
 import type { Range } from "@/lib/types"
@@ -85,51 +91,117 @@ export function MerchantMark({
 
 export function SectionCard({
   title,
+  info,
   action,
   children,
+  footer,
   className,
   contentClassName,
   flush = false,
+  fill = false,
 }: {
   title: ReactNode
+  /** A short explanation behind an info icon beside the title. */
+  info?: ReactNode
   action?: ReactNode
   children: ReactNode
+  /** Actions or notes at the bottom of the card, such as Save and Delete. */
+  footer?: ReactNode
   className?: string
   contentClassName?: string
   /** Content reaches the card edges, for lists and tables. */
   flush?: boolean
+  /** Stretch to the row's height; the content grows to fill it. */
+  fill?: boolean
 }) {
   return (
-    <Card className={cn("min-w-0", flush && "gap-2 pb-0", className)}>
+    <Card
+      className={cn(
+        "min-w-0",
+        flush && !footer && "gap-2 pb-0",
+        flush && footer && "gap-2",
+        fill && "h-full",
+        className
+      )}
+    >
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="flex items-center gap-1">
+          {title}
+          {info ? (
+            <InfoTip label={`About ${String(title)}`}>{info}</InfoTip>
+          ) : null}
+        </CardTitle>
         {action ? (
           <CardAction className="flex items-center gap-2">{action}</CardAction>
         ) : null}
       </CardHeader>
-      <CardContent className={cn(flush && "px-0", contentClassName)}>
+      <CardContent
+        className={cn(
+          flush && "px-0",
+          fill && "flex flex-1 flex-col",
+          contentClassName
+        )}
+      >
         {children}
       </CardContent>
+      {footer ? (
+        <CardFooter className="flex-wrap justify-end gap-2 border-t">
+          {footer}
+        </CardFooter>
+      ) : null}
     </Card>
   )
 }
 
-/** A figure with its label above and context below. */
+/** Explanations live behind this icon instead of in subheads. */
+export function InfoTip({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={label}
+            className="text-muted-foreground"
+          />
+        }
+      >
+        <InfoIcon />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">{children}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** A figure with its label above and, when it is data, context below. */
 export function Stat({
   label,
   children,
   detail,
+  info,
   className,
 }: {
   label: ReactNode
   children: ReactNode
   detail?: ReactNode
+  /** How the figure is worked out, behind an info icon. */
+  info?: ReactNode
   className?: string
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
-      <span className="truncate text-xs text-muted-foreground sm:text-sm">
+      <span className="flex min-h-5 items-center gap-0.5 text-xs text-muted-foreground sm:text-sm">
         {label}
+        {info ? (
+          <InfoTip label={`About ${String(label)}`}>{info}</InfoTip>
+        ) : null}
       </span>
       <span className="text-lg font-semibold tracking-tight tabular-nums sm:text-xl">
         {children}

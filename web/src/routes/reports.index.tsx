@@ -34,6 +34,7 @@ import {
   moneyTick,
   monthEpoch,
   percent,
+  percentChange,
   shortDate,
 } from "@/lib/format"
 import { categoryReportQuery } from "@/lib/queries"
@@ -43,12 +44,8 @@ export const Route = createFileRoute("/reports/")({
   validateSearch: z.object({
     range: z.enum(["1m", "3m", "6m", "ytd", "1y", "all"]).optional(),
   }),
-  staticData: {
-    crumbs: [
-      { label: "Reports", to: "/reports" },
-      { label: "Categories", to: "/reports" },
-    ],
-  },
+  // The sidebar and tabs name the report; the breadcrumb stays at Reports.
+  staticData: { crumbs: [{ label: "Reports", to: "/reports" }] },
   component: CategoryReport,
 })
 
@@ -58,20 +55,9 @@ function CategoryReport() {
   const navigate = useNavigate({ from: "/reports/" })
   const q = useQuery(categoryReportQuery(range))
   const d = q.data
-  // Parents include the categories you created inside them.
-  const rows = (d?.rows ?? []).map((r) => {
-    const kids = r.parent
-      ? []
-      : (d?.rows ?? []).filter((x) => x.parent === r.code)
-    return {
-      ...r,
-      cents: r.cents + kids.reduce((s, k) => s + k.cents, 0),
-      previousCents:
-        r.previousCents + kids.reduce((s, k) => s + k.previousCents, 0),
-      count: r.count + kids.reduce((s, k) => s + k.count, 0),
-    }
-  })
-  const top = rows.filter((r) => !r.parent).sort((a, b) => b.cents - a.cents)
+  // Rows arrive with parents already including their children.
+  const rows = d?.rows ?? []
+  const top = rows.filter((r) => !r.parent)
   const ordered = top.flatMap((r) => [
     r,
     ...rows.filter((x) => x.parent === r.code),
@@ -104,15 +90,15 @@ function CategoryReport() {
           <StatRow>
             <Stat
               label="Spent"
-              detail={`${shortDate(d.from, d.to)} – ${shortDate(d.to)}`}
+              detail={`${shortDate(d.from, d.to)} – ${shortDate(d.to, d.to)}`}
             >
               {money(d.totalCents, { whole: true })}
             </Stat>
             <Stat label="Categories">{top.length}</Stat>
             <Stat label="Largest">{top[0]?.label ?? "—"}</Stat>
           </StatRow>
-          <PageGrid layout="wide">
-            <SectionCard title="Share of spending">
+          <PageGrid className="items-stretch lg:grid-cols-2">
+            <SectionCard title="Share of spending" fill>
               <DonutChart
                 label="Share of spending by category"
                 totalLabel="spent"
@@ -130,7 +116,7 @@ function CategoryReport() {
                 }
               />
             </SectionCard>
-            <SectionCard title="Top categories by month">
+            <SectionCard title="Top categories by month" fill>
               <TrendChart
                 kind="bar"
                 stacked
@@ -138,9 +124,7 @@ function CategoryReport() {
                 data={d.months.map((month, i) => ({
                   time: monthEpoch(month),
                   ...Object.fromEntries(
-                    top
-                      .slice(0, 3)
-                      .map((r) => [r.code, (r.monthly[i] ?? 0) / 100])
+                    top.slice(0, 3).map((r) => [r.code, r.monthly[i] / 100])
                   ),
                 }))}
                 config={Object.fromEntries(
@@ -154,7 +138,7 @@ function CategoryReport() {
                 format={(v) => money(Math.round(v * 100), { whole: true })}
                 formatTime={epochMonthYear}
                 formatTick={moneyTick}
-                className="h-56"
+                className="h-full min-h-56"
               />
             </SectionCard>
           </PageGrid>
@@ -217,8 +201,7 @@ function CategoryReport() {
                                   : "text-muted-foreground"
                             }
                           >
-                            {change > 0 ? "+" : ""}
-                            {percent(change)}
+                            {percentChange(change)}
                           </span>
                         )}
                       </TableCell>

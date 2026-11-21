@@ -86,8 +86,15 @@ export const epochDate = (ms: number) => DATE.format(new Date(ms))
 export const epochFullDate = (ms: number) => DATE_YEAR.format(new Date(ms))
 export const epochMonthName = (ms: number) => MONTH_YEAR.format(new Date(ms))
 
+// Enough digits for a round step: $125k, $12.5k, $1.25k.
 const trimNumber = (n: number) =>
-  n >= 100 ? String(Math.round(n)) : String(Math.round(n * 10) / 10)
+  String(
+    n >= 100
+      ? Math.round(n)
+      : n >= 10
+        ? Math.round(n * 10) / 10
+        : Math.round(n * 100) / 100
+  )
 /** Round axis money from chart dollars: $105k, $1.5k, $450. */
 export function moneyTick(dollars: number) {
   const abs = Math.abs(dollars)
@@ -95,16 +102,6 @@ export function moneyTick(dollars: number) {
   if (abs >= 1_000_000) return `${sign}$${trimNumber(abs / 1_000_000)}M`
   if (abs >= 1000) return `${sign}$${trimNumber(abs / 1000)}k`
   return `${sign}$${Math.round(abs)}`
-}
-
-/** Time-axis ticks: days for a short span, months otherwise, with years when the span crosses one. */
-export function timeTick(points: { time: number }[]) {
-  const first = points[0]?.time ?? 0
-  const last = points.at(-1)?.time ?? 0
-  if ((last - first) / 86_400_000 <= 120) return epochDate
-  return new Date(first).getUTCFullYear() !== new Date(last).getUTCFullYear()
-    ? epochMonthYear
-    : epochMonth
 }
 
 export function addMonths(month: string, n: number) {
@@ -127,6 +124,34 @@ export function relativeDay(date: string, today: string) {
 }
 export const percent = (value: number, digits = 0) =>
   `${(value * 100).toFixed(digits).replace(/^-/, "−")}%`
+/** A change as "+12%", "−5%" or "0%": the sign follows the rounded figure. */
+export function percentChange(value: number, digits = 0) {
+  const text = Math.abs(value * 100).toFixed(digits)
+  if (Number(text) === 0) return `${(0).toFixed(digits)}%`
+  return `${value > 0 ? "+" : "−"}${text}%`
+}
+/** An account number's last digits, as banks print them: "••4821". */
+export const mask = (digits: string) => `••${digits}`
+/** One wording for a connection's state, on badges and account rows alike. */
+export const syncLabel = (status: string) =>
+  ({
+    healthy: "Up to date",
+    stale: "Sync behind",
+    error: "Sync failing",
+    disabled: "Sync paused",
+  })[status] ?? "Sync failing"
+/** "credit card" → "Credit card". */
+export const sentenceCase = (s: string) =>
+  s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+/** "Today", "Yesterday", then the full date, for day headers everywhere. */
+export function dayHeading(date: string, today?: string) {
+  if (today) {
+    const days = daysBetween(today, date)
+    if (days === 0) return "Today"
+    if (days === -1) return "Yesterday"
+  }
+  return longDate(date)
+}
 
 export const CADENCE: Record<string, string> = {
   weekly: "Weekly",
