@@ -3,3 +3,6 @@ dist
 .tanstack
 fixtures/out
 screenshots
+
+test-results/
+playwright-report/

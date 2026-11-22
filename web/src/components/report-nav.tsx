@@ -15,9 +15,9 @@ const PAGES = [
     match: (p: string) => p.startsWith("/reports/merchants"),
   },
   {
-    to: "/reports/trends",
-    label: "Trends",
-    match: (p: string) => p.startsWith("/reports/trends"),
+    to: "/reports/builder",
+    label: "Builder",
+    match: (p: string) => p.startsWith("/reports/builder"),
   },
 ] as const
 

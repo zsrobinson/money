@@ -8,7 +8,6 @@ import {
   PageTitle,
 } from "@zsrobinson/shell"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
-import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {
   Card,
@@ -17,7 +16,8 @@ import {
   CardTitle,
   CardAction,
 } from "@zsrobinson/shell/ui/card"
-import { PlusIcon } from "lucide-react"
+import { PlusIcon, TriangleAlertIcon } from "lucide-react"
+import { allocationLabel, goalDone, GoalStatus } from "@/components/goals"
 import { EmptyState, Loading, Meter, Stat, StatRow } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
 import { fullDate, money, percent } from "@/lib/format"
@@ -28,13 +28,6 @@ export const Route = createFileRoute("/goals/")({
   staticData: { crumbs: [{ label: "Goals", to: "/goals" }] },
   component: Goals,
 })
-
-export function GoalStatus({ goal: g }: { goal: Goal }) {
-  if (g.progress >= 1) return <Badge>Reached</Badge>
-  if (g.onTrack === true) return <Badge variant="positive">On track</Badge>
-  if (g.onTrack === false) return <Badge variant="destructive">Behind</Badge>
-  return null
-}
 
 function Goals() {
   usePageTitle("Goals")
@@ -110,12 +103,7 @@ function Goals() {
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-xl font-semibold tracking-tight tabular-nums">
-                      {money(
-                        g.kind === "payoff"
-                          ? g.targetCents - g.currentCents
-                          : g.currentCents,
-                        { whole: true }
-                      )}
+                      {money(goalDone(g), { whole: true })}
                     </span>
                     <span className="text-sm text-muted-foreground tabular-nums">
                       {g.kind === "payoff" ? "paid of " : "of "}
@@ -142,6 +130,7 @@ function Goals() {
                             : "No recent progress"}
                     </span>
                   </div>
+                  <GoalFacts goal={g} />
                 </CardContent>
               </Card>
             ))}
@@ -164,5 +153,42 @@ function Goals() {
         </EmptyState>
       )}
     </Page>
+  )
+}
+
+/** Where the money is, the monthly plan against what it takes, and overlaps. */
+function GoalFacts({ goal: g }: { goal: Goal }) {
+  const needed = g.progress >= 1 ? null : g.neededMonthlyCents
+  return (
+    <dl className="flex flex-col gap-1.5 border-t pt-3 text-xs">
+      {g.allocations.map((a) => (
+        <div key={a.accountId} className="flex justify-between gap-3">
+          <dt className="min-w-0 text-muted-foreground">{a.accountName}</dt>
+          <dd className="shrink-0 text-right tabular-nums">
+            {allocationLabel(a)}
+          </dd>
+        </div>
+      ))}
+      {g.monthlyCents || needed != null ? (
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted-foreground">Planned / needed a month</dt>
+          <dd className="shrink-0 text-right tabular-nums">
+            {g.monthlyCents ? money(g.monthlyCents, { whole: true }) : "—"} /{" "}
+            {needed != null ? money(needed, { whole: true }) : "—"}
+          </dd>
+        </div>
+      ) : null}
+      {g.overlaps.length ? (
+        <div className="flex items-start gap-1.5 text-muted-foreground">
+          <TriangleAlertIcon className="mt-px size-3.5 shrink-0" />
+          <span>
+            Shares{" "}
+            {g.overlaps
+              .map((o) => `${o.accountName} with ${o.goals.join(", ")}`)
+              .join("; ")}
+          </span>
+        </div>
+      ) : null}
+    </dl>
   )
 }

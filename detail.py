@@ -5,6 +5,7 @@ and future private columns cannot accidentally enter a web snapshot.
 """
 import hashlib
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import date, datetime, timedelta, timezone
@@ -17,6 +18,8 @@ CREATE TABLE IF NOT EXISTS web_transactions(provider_id TEXT PRIMARY KEY, item T
 CREATE TABLE IF NOT EXISTS web_holding_prices(item TEXT,account_id TEXT,security_id TEXT,price REAL,PRIMARY KEY(item,account_id,security_id));
 CREATE TABLE IF NOT EXISTS web_balance_history(account_id TEXT,date TEXT,current_cents INTEGER,estimated INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account_id,date));
 CREATE TABLE IF NOT EXISTS web_holding_history(account_id TEXT,security_id TEXT,date TEXT,quantity REAL,value_cents INTEGER,PRIMARY KEY(account_id,security_id,date));
+CREATE TABLE IF NOT EXISTS web_investment_transactions(item TEXT,provider_id TEXT,account TEXT,security_id TEXT,date TEXT,type TEXT,subtype TEXT,quantity REAL,price REAL,amount REAL,fees REAL,PRIMARY KEY(item,provider_id));
+CREATE TABLE IF NOT EXISTS web_liabilities(item TEXT,account TEXT,kind TEXT,last_statement_balance REAL,last_statement_date TEXT,minimum_payment REAL,next_payment_due_date TEXT,last_payment REAL,last_payment_date TEXT,apr_percent REAL,is_overdue INTEGER,PRIMARY KEY(item,account));
 '''
 SCHEMA = '''
 CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);
@@ -28,8 +31,11 @@ CREATE TABLE holdings(account_id TEXT,security_id TEXT,ticker TEXT,name TEXT,typ
 CREATE TABLE holding_history(account_id TEXT,security_id TEXT,date TEXT,quantity REAL,value_cents INTEGER,PRIMARY KEY(account_id,security_id,date));
 CREATE TABLE recurring_hints(source_id TEXT,merchant TEXT,currency TEXT,frequency TEXT,last_charged_month TEXT,active INTEGER,PRIMARY KEY(source_id,merchant));
 CREATE TABLE categories(code TEXT PRIMARY KEY,label TEXT,"group" TEXT,parent TEXT,sort INTEGER);
+CREATE TABLE investment_transactions(id TEXT PRIMARY KEY,account_id TEXT,security_id TEXT,date TEXT,type TEXT,subtype TEXT,quantity REAL,price REAL,amount_cents INTEGER,fees_cents INTEGER);
+CREATE TABLE liabilities(account_id TEXT PRIMARY KEY,kind TEXT,last_statement_balance_cents INTEGER,last_statement_date TEXT,minimum_payment_cents INTEGER,next_payment_due_date TEXT,last_payment_cents INTEGER,last_payment_date TEXT,apr_percent REAL,is_overdue INTEGER);
 CREATE INDEX transactions_date ON transactions(date, id);
 CREATE INDEX transactions_account ON transactions(account_id,date);
+CREATE INDEX investment_transactions_account ON investment_transactions(account_id,date);
 '''
 
 
@@ -74,8 +80,63 @@ def ingest_holdings(db,item,data):
     db.execute('DELETE FROM web_holding_prices WHERE item=?',(item,))
     for h in data['holdings']:
         s=securities.get(h['security_id'],{})
-        security=opaque('sec',s.get('ticker_symbol') or '',s.get('name') or '',s.get('type','unknown') or '')
+        security=security_ref(s)
         db.execute('INSERT OR REPLACE INTO web_holding_prices VALUES(?,?,?,?)',(item,h['account_id'],security,h.get('institution_price')))
+
+
+def security_ref(s):
+    """Same opaque security id as holdings."""
+    return opaque('sec',s.get('ticker_symbol') or '',s.get('name') or '',s.get('type','unknown') or '')
+
+
+def day_or_none(value):
+    if value is None:return None
+    if not isinstance(value,str) or date.fromisoformat(value).isoformat()!=value:raise ValueError('Invalid provider date')
+    return value
+
+
+def enum_or_none(value):
+    # Provider enums only (buy, sell, dividend, ...); never free text.
+    return value if isinstance(value,str) and re.fullmatch(r'[a-z][a-z ]{0,39}',value) else None
+
+
+def number_or_none(value):
+    if value is None:return None
+    if isinstance(value,bool) or not isinstance(value,(int,float)):raise ValueError('Invalid provider number')
+    return value
+
+
+def ingest_investment_transactions(db,item,data):
+    """Replace the fetched window. Names and cancel references are never retained."""
+    securities={s['security_id']:s for s in data.get('securities',[])}
+    rows=[]
+    for t in data['investment_transactions']:
+        security=security_ref(securities.get(t['security_id'],{})) if t.get('security_id') else None
+        rows.append((item,t['investment_transaction_id'],t['account_id'],security,day_or_none(t['date']),enum_or_none(t.get('type')),enum_or_none(t.get('subtype')),
+            number_or_none(t.get('quantity')),number_or_none(t.get('price')),number_or_none(t['amount']),number_or_none(t.get('fees'))))
+    db.execute('DELETE FROM web_investment_transactions WHERE item=? AND date>=?',(item,day_or_none(data['start_date'])))
+    db.executemany('INSERT OR REPLACE INTO web_investment_transactions VALUES(?,?,?,?,?,?,?,?,?,?,?)',rows)
+
+
+def ingest_liabilities(db,item,data):
+    """Bill fields only: no account numbers, addresses, servicer or loan names."""
+    rows=[]
+    groups=data.get('liabilities') or {}
+    for c in groups.get('credit') or []:
+        aprs=[a for a in c.get('aprs') or [] if isinstance(a,dict)]
+        apr=next((a for a in aprs if a.get('apr_type')=='purchase_apr'),aprs[0] if aprs else {})
+        rows.append((c['account_id'],'credit',c.get('last_statement_balance'),c.get('last_statement_issue_date'),c.get('minimum_payment_amount'),c.get('next_payment_due_date'),c.get('last_payment_amount'),c.get('last_payment_date'),apr.get('apr_percentage'),c.get('is_overdue')))
+    for s in groups.get('student') or []:
+        rows.append((s['account_id'],'student',s.get('last_statement_balance'),s.get('last_statement_issue_date'),s.get('minimum_payment_amount'),s.get('next_payment_due_date'),s.get('last_payment_amount'),s.get('last_payment_date'),s.get('interest_rate_percentage'),s.get('is_overdue')))
+    for m in groups.get('mortgage') or []:
+        past=number_or_none(m.get('past_due_amount'))
+        rows.append((m['account_id'],'mortgage',None,None,m.get('next_monthly_payment'),m.get('next_payment_due_date'),m.get('last_payment_amount'),m.get('last_payment_date'),(m.get('interest_rate') or {}).get('percentage'),None if past is None else past>0))
+    checked=[]
+    for account,kind,balance,statement,minimum,due,paid,paid_on,apr,overdue in rows:
+        if overdue is not None and not isinstance(overdue,bool):raise ValueError('Invalid provider flag')
+        checked.append((item,account,kind,number_or_none(balance),day_or_none(statement),number_or_none(minimum),day_or_none(due),number_or_none(paid),day_or_none(paid_on),number_or_none(apr),None if overdue is None else int(overdue)))
+    db.execute('DELETE FROM web_liabilities WHERE item=?',(item,))
+    db.executemany('INSERT OR REPLACE INTO web_liabilities VALUES(?,?,?,?,?,?,?,?,?,?,?)',checked)
 
 
 def record_history(db, today=None):
@@ -121,7 +182,11 @@ def publish(db, path):
     out=sqlite3.connect(temp)
     try:
         out.executescript(SCHEMA)
-        out.executemany('INSERT INTO meta VALUES(?,?)',[('schema_version','1'),('generated_at',datetime.now(timezone.utc).isoformat())])
+        out.executemany('INSERT INTO meta VALUES(?,?)',[('schema_version','2'),('generated_at',datetime.now(timezone.utc).isoformat())])
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='optional_product_status'").fetchone():
+            for product,status in db.execute('SELECT product,status FROM optional_product_status'):
+                if product in {'investments','liabilities'} and status in {'ok','relink_required','unavailable'}:
+                    out.execute('INSERT INTO meta VALUES(?,?)',(product+'_status',status))
         separate=separate_accounts(db)
         for source in snapshot_sources(db):
             snap=source.read_snapshot(db)
@@ -161,12 +226,21 @@ def publish(db, path):
                 out.execute('INSERT INTO holdings VALUES(?,?,?,?,?,?,?,?,?,?)',(aid,security,ticker,name,kind,currency,quantity,price,cents(value),cents(basis)))
         for row in db.execute('SELECT * FROM web_holding_history'):
             if out.execute('SELECT 1 FROM accounts WHERE id=?',(row[0],)).fetchone():out.execute('INSERT INTO holding_history VALUES(?,?,?,?,?)',row)
+        # Investment amounts follow transactions: cash into the account is positive.
+        for item,provider,account,security,day,kind,subtype,quantity,price,amount,fees in db.execute('SELECT w.item,w.provider_id,m.ref,w.security_id,w.date,w.type,w.subtype,w.quantity,w.price,w.amount,w.fees FROM web_investment_transactions w JOIN account_alias m ON m.provider_ref=w.account AND m.item=w.item ORDER BY w.date,w.item,w.provider_id'):
+            if out.execute('SELECT 1 FROM accounts WHERE id=?',(account,)).fetchone():
+                out.execute('INSERT INTO investment_transactions VALUES(?,?,?,?,?,?,?,?,?,?)',(opaque('itx',item,provider),account,security,day,kind,subtype,quantity,price,None if amount is None else -cents(amount),cents(fees)))
+        for account,*bill in db.execute('SELECT m.ref,w.kind,w.last_statement_balance,w.last_statement_date,w.minimum_payment,w.next_payment_due_date,w.last_payment,w.last_payment_date,w.apr_percent,w.is_overdue FROM web_liabilities w JOIN account_alias m ON m.provider_ref=w.account AND m.item=w.item ORDER BY w.item,w.account'):
+            if out.execute('SELECT 1 FROM accounts WHERE id=?',(account,)).fetchone():
+                kind,balance,statement,minimum,due,paid,paid_on,apr,overdue=bill
+                out.execute('INSERT OR REPLACE INTO liabilities VALUES(?,?,?,?,?,?,?,?,?,?)',(account,kind,cents(balance),statement,cents(minimum),due,cents(paid),paid_on,apr,overdue))
         for item,merchant,currency,frequency,month,active in db.execute('SELECT item,merchant,currency,frequency,last_charged_month,active FROM recurring_merchants'):
             from sources import source_ref
             sid=source_ref(db,item)
             if out.execute('SELECT 1 FROM sources WHERE id=? AND status!=\'disabled\'',(sid,)).fetchone():out.execute('INSERT INTO recurring_hints VALUES(?,?,?,?,?,?)',(sid,merchant,currency,frequency,month,active))
         for i,(code,values) in enumerate(CATEGORIES.items()):
-            group='income' if code=='income' else 'transfer' if code in ('bank_transfer','internal_transfer','peer_payment') else 'expense'
+            # The web app counts peer payments in spending by default; MCP keeps them separate.
+            group='income' if code=='income' else 'transfer' if code in ('bank_transfer','internal_transfer') else 'expense'
             out.execute('INSERT INTO categories VALUES(?,?,?,?,?)',(code,values[0],group,None,i))
         out.commit();out.close();os.chmod(temp,0o640)
         with open(temp,'rb') as f:os.fsync(f.fileno())

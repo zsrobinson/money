@@ -2,10 +2,10 @@ import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   Page,
-  PageActions,
   PageGrid,
   PageHeader,
   PageMeta,
+  PageStack,
   PageTitle,
 } from "@zsrobinson/shell"
 import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
@@ -18,13 +18,16 @@ import {
   Change,
   EmptyState,
   Loading,
-  Meter,
+  BudgetBar,
   MerchantMark,
   RangeSelect,
   SectionCard,
   Stat,
   StatRow,
 } from "@/components/money"
+import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
+import { useCategories } from "@/components/category-style"
+import { GoalsCard } from "@/components/goals"
 import { TxnRows } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
@@ -49,6 +52,21 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 })
 
+/** Card order on a phone, where the grids flatten into one column. */
+const ORDER = [
+  "",
+  "max-lg:order-1",
+  "max-lg:order-2",
+  "max-lg:order-3",
+  "max-lg:order-4",
+  "max-lg:order-5",
+  "max-lg:order-6",
+  "max-lg:order-7",
+  "max-lg:order-8",
+  "max-lg:order-9",
+  "max-lg:order-10",
+]
+
 const whole = (dollars: number) =>
   money(Math.round(dollars * 100), { whole: true })
 
@@ -62,6 +80,15 @@ function Dashboard() {
   const setRange = (r: Range) =>
     void navigate({ search: { range: r }, replace: true })
   const s = summary.data
+  const cats = useCategories()
+  const mobile = useIsMobile()
+  const today = meta.data?.today
+  const elapsed = today
+    ? Number(today.slice(8, 10)) /
+      new Date(
+        Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)
+      ).getUTCDate()
+    : 0
   const netPoints = (s?.netWorth.series ?? []).map((p) => ({
     time: epoch(p.date),
     net: p.net / 100,
@@ -74,20 +101,6 @@ function Dashboard() {
     <Page>
       <PageHeader>
         <PageTitle>Dashboard</PageTitle>
-        <PageActions>
-          {s?.unreviewed ? (
-            <Button
-              variant="outline"
-              size="sm"
-              render={
-                <Link to="/transactions" search={{ status: "unreviewed" }} />
-              }
-              nativeButton={false}
-            >
-              Review {s.unreviewed} transactions
-            </Button>
-          ) : null}
-        </PageActions>
       </PageHeader>
       {summary.isError ? (
         <QueryError
@@ -100,284 +113,367 @@ function Dashboard() {
         <Loading rows={8} />
       ) : (
         <>
-          <PageGrid layout="wide" className="items-stretch">
-            <SectionCard
-              title="Net worth"
-              action={<RangeSelect value={s.range} onChange={setRange} />}
-            >
-              <StatRow className="mb-4">
-                <Stat
-                  label="Net worth"
-                  detail={
-                    <Change
-                      cents={s.netWorth.changeCents}
-                      suffix="in this range"
-                    />
-                  }
-                >
-                  <Amount cents={s.netWorth.cents} tone="plain" whole />
-                </Stat>
-                <Stat label="Assets">
-                  <Amount cents={s.netWorth.assetsCents} tone="plain" whole />
-                </Stat>
-                <Stat label="Liabilities">
-                  <Amount
-                    cents={s.netWorth.liabilitiesCents}
-                    tone="plain"
-                    whole
-                  />
-                </Stat>
-              </StatRow>
-              <TrendChart
-                label="Net worth over time"
-                baseline="data"
-                data={netPoints}
-                config={{
-                  net: { label: "Net worth", color: "var(--chart-1)" },
-                }}
-                format={whole}
-                formatTick={moneyTick}
-                formatTime={epochFullDate}
-                utc
-                className="h-52"
-              />
-            </SectionCard>
-            <SectionCard
-              title={monthName(s.month.month)}
-              action={<CardLink to="/cash-flow">Cash flow</CardLink>}
-            >
-              <StatRow className="mb-4">
-                <Stat
-                  label="Spent"
-                  detail={paceText(
-                    s.month.spendingCents,
-                    s.month.lastMonthSameDayCents
-                  )}
-                >
-                  <Amount cents={s.month.spendingCents} tone="plain" whole />
-                </Stat>
-                <Stat label="Earned">
-                  <Amount cents={s.month.incomeCents} tone="plain" whole />
-                </Stat>
-              </StatRow>
-              <TrendChart
-                curve="linear"
-                label="Spending this month against last month, by day"
-                data={s.month.pace.map((p) => ({
-                  time: p.day,
-                  thisMonth: p.thisMonth == null ? null : p.thisMonth / 100,
-                  lastMonth: p.lastMonth == null ? null : p.lastMonth / 100,
-                }))}
-                config={{
-                  thisMonth: { label: "This month", color: "var(--chart-1)" },
-                  lastMonth: {
-                    label: "Last month",
-                    color: "var(--chart-neutral)",
-                  },
-                }}
-                dashed={["lastMonth"]}
-                format={whole}
-                formatTick={moneyTick}
-                formatTime={(d) => `Day ${d}`}
-                timeTicks={[1, 8, 15, 22, 29]}
-                formatTimeTick={(d) => String(d)}
-                className="h-52"
-              />
-            </SectionCard>
-          </PageGrid>
-          <PageGrid className="items-stretch lg:grid-cols-3">
-            <SectionCard
-              title="Budget"
-              fill
-              action={<CardLink to="/budgets">Budgets</CardLink>}
-            >
-              {s.budget.rows.length ? (
-                <div className="flex flex-col gap-3">
-                  <div className="mb-1 flex items-end justify-between gap-3">
-                    <Stat
-                      label="Spent"
-                      detail={`of ${money(s.budget.budgetedCents, { whole: true })} budgeted`}
-                    >
-                      {money(s.budget.spentCents, { whole: true })}
-                    </Stat>
-                    <span
-                      className={`text-sm ${
-                        s.budget.over
-                          ? "text-negative"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {s.budget.over ? `${s.budget.over} over` : "On budget"}
-                    </span>
-                  </div>
-                  {s.budget.rows.map((r) => (
-                    <div key={r.code} className="flex flex-col gap-2">
-                      <BudgetMeter row={r} />
-                      {r.children.map((c) => (
-                        <BudgetMeter key={c.code} row={c} child />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  title="No budgets yet"
-                  action={
-                    <Button
-                      size="sm"
-                      render={<Link to="/budgets" />}
-                      nativeButton={false}
-                    >
-                      Set budgets
-                    </Button>
-                  }
-                />
-              )}
-            </SectionCard>
-            <SectionCard
-              title="Spending by category"
-              fill
-              action={<CardLink to="/reports">Reports</CardLink>}
-            >
-              <DonutChart
-                label={`Spending by category in ${monthName(s.month.month)}`}
-                totalLabel="spent"
-                format={(v) => money(v, { whole: true })}
-                data={s.month.top.map((c) => ({
-                  key: c.code,
-                  label: c.label,
-                  value: c.cents,
-                }))}
-                onSelect={(code) =>
-                  void navigate({
-                    to: "/reports/categories/$code",
-                    params: { code },
-                  })
-                }
-              />
-            </SectionCard>
-            <SectionCard
-              title="Upcoming"
-              flush
-              fill
-              action={<CardLink to="/recurring">Recurring</CardLink>}
-            >
-              {s.upcoming.length ? (
-                <ul className="flex flex-col divide-y divide-border/70">
-                  {s.upcoming.map((r) => (
-                    <li key={r.key}>
-                      <Link
-                        to="/reports/merchants/$key"
-                        params={{ key: r.key }}
-                        className="flex min-h-12 items-center gap-3 px-5 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted"
-                      >
-                        <MerchantMark name={r.merchant} />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="line-clamp-2 text-sm font-medium">
-                            {r.merchant}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {relativeDay(
-                              r.nextDate,
-                              meta.data?.today ?? r.nextDate
-                            )}{" "}
-                            · {CADENCE[r.cadence] ?? r.cadence}
-                          </span>
-                        </span>
-                        <Amount
-                          cents={r.amountCents}
-                          className="text-sm whitespace-nowrap"
-                        />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="px-5 pb-5 text-sm text-muted-foreground">
-                  Nothing due in the next month.
-                </p>
-              )}
-            </SectionCard>
-          </PageGrid>
-          <PageGrid layout="wide" className="items-stretch">
-            <SectionCard
-              title="Recent transactions"
-              flush
-              fill
-              action={<CardLink to="/transactions">All transactions</CardLink>}
-            >
-              <TxnRows items={s.recent} showAccount={false} />
-            </SectionCard>
-            <SectionCard
-              title="Accounts"
-              flush
-              fill
-              action={<CardLink to="/accounts">Accounts</CardLink>}
-              footer={
-                meta.data ? (
-                  <Freshness
-                    generatedAt={meta.data.generatedAt}
-                    stale={
-                      meta.data.sources.filter((x) => x.status !== "healthy")
-                        .length
+          <div className="flex flex-col gap-(--section-gap)">
+            <PageGrid layout="wide" className="items-stretch max-lg:contents">
+              <SectionCard
+                title="Net worth"
+                className={ORDER[1]}
+                action={<RangeSelect value={s.range} onChange={setRange} />}
+              >
+                <StatRow className="mb-4">
+                  <Stat
+                    label="Net worth"
+                    detail={
+                      <Change
+                        cents={s.netWorth.changeCents}
+                        suffix="in this range"
+                      />
                     }
-                  />
-                ) : undefined
-              }
-            >
-              <AccountGroups accounts={s.accounts} />
-            </SectionCard>
-          </PageGrid>
-          {investments.data?.holdings.length ? (
-            <SectionCard
-              title="Investments"
-              action={<CardLink to="/investments">Holdings</CardLink>}
-            >
-              <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-center">
-                <StatRow className="lg:grid lg:grid-cols-1 lg:gap-y-4">
-                  <Stat label="Value">
+                  >
+                    <Amount cents={s.netWorth.cents} tone="plain" whole />
+                  </Stat>
+                  <Stat label="Assets">
+                    <Amount cents={s.netWorth.assetsCents} tone="plain" whole />
+                  </Stat>
+                  <Stat label="Liabilities">
                     <Amount
-                      cents={investments.data.totalCents}
+                      cents={s.netWorth.liabilitiesCents}
                       tone="plain"
                       whole
                     />
                   </Stat>
-                  <Stat label="Gain on cost">
-                    <Amount
-                      cents={investments.data.gainCents}
-                      tone="signed"
-                      whole
-                    />
-                  </Stat>
-                  {invPoints.length > 1 ? (
-                    <Stat label="3 months">
-                      <Amount
-                        cents={
-                          investments.data.series.at(-1)!.cents -
-                          investments.data.series[0].cents
-                        }
-                        tone="signed"
-                        whole
-                      />
-                    </Stat>
-                  ) : null}
                 </StatRow>
                 <TrendChart
-                  label="Investment value, last 3 months"
+                  label="Net worth over time"
                   baseline="data"
-                  data={invPoints}
+                  data={netPoints}
                   config={{
-                    value: { label: "Value", color: "var(--chart-1)" },
+                    net: { label: "Net worth", color: "var(--chart-1)" },
                   }}
                   format={whole}
                   formatTick={moneyTick}
                   formatTime={epochFullDate}
                   utc
-                  className="h-44"
+                  className="h-52"
                 />
-              </div>
-            </SectionCard>
-          ) : null}
+              </SectionCard>
+              <SectionCard
+                title={monthName(s.month.month)}
+                className={ORDER[2]}
+                action={<CardLink to="/cash-flow">Cash flow</CardLink>}
+              >
+                <StatRow className="mb-4">
+                  <Stat
+                    label="Spending"
+                    detail={paceText(
+                      s.month.spendingCents,
+                      s.month.lastMonthSameDayCents
+                    )}
+                  >
+                    <Amount cents={s.month.spendingCents} tone="plain" whole />
+                  </Stat>
+                  <Stat label="Income">
+                    <Amount cents={s.month.incomeCents} tone="plain" whole />
+                  </Stat>
+                </StatRow>
+                <TrendChart
+                  curve="linear"
+                  label="Spending this month against last month, by day"
+                  data={s.month.pace.map((p) => ({
+                    time: p.day,
+                    thisMonth: p.thisMonth == null ? null : p.thisMonth / 100,
+                    lastMonth: p.lastMonth == null ? null : p.lastMonth / 100,
+                  }))}
+                  config={{
+                    thisMonth: { label: "This month", color: "var(--chart-1)" },
+                    lastMonth: {
+                      label: "Last month",
+                      color: "var(--chart-neutral)",
+                    },
+                  }}
+                  dashed={["lastMonth"]}
+                  format={whole}
+                  formatTick={moneyTick}
+                  formatTime={(d) => `Day ${d}`}
+                  timeTicks={[1, 8, 15, 22, 29]}
+                  formatTimeTick={(d) => String(d)}
+                  className="h-52"
+                />
+              </SectionCard>
+            </PageGrid>
+            <PageGrid className="items-stretch max-lg:contents lg:grid-cols-3">
+              <SectionCard
+                title="Budget"
+                className={ORDER[4]}
+                fill
+                action={<CardLink to="/budgets">Budgets</CardLink>}
+              >
+                {s.budget.rows.length ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="mb-1 flex items-end justify-between gap-3">
+                      <Stat
+                        label="Spent in budgets"
+                        detail={
+                          s.budget.unbudgetedCents
+                            ? `of ${money(s.budget.budgetedCents, { whole: true })} budgeted · ${money(s.budget.unbudgetedCents, { whole: true })} outside budgets`
+                            : `of ${money(s.budget.budgetedCents, { whole: true })} budgeted`
+                        }
+                      >
+                        {money(s.budget.spentCents, { whole: true })}
+                      </Stat>
+                      <span
+                        className={`text-sm ${
+                          s.budget.over
+                            ? "text-negative"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {s.budget.over ? `${s.budget.over} over` : "On budget"}
+                      </span>
+                    </div>
+                    {(mobile ? s.budget.rows.slice(0, 3) : s.budget.rows).map(
+                      (r) => (
+                        <div key={r.code} className="flex flex-col gap-2">
+                          <BudgetMeter row={r} elapsed={elapsed} />
+                          {r.children.map((c) => (
+                            <BudgetMeter
+                              key={c.code}
+                              row={c}
+                              child
+                              elapsed={elapsed}
+                            />
+                          ))}
+                        </div>
+                      )
+                    )}
+                    {mobile && s.budget.rows.length > 3 ? (
+                      <Link
+                        to="/budgets"
+                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                      >
+                        {s.budget.rows.length - 3} more budgets
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No budgets yet"
+                    action={
+                      <Button
+                        size="sm"
+                        render={<Link to="/budgets" />}
+                        nativeButton={false}
+                      >
+                        Set budgets
+                      </Button>
+                    }
+                  />
+                )}
+              </SectionCard>
+              <SectionCard
+                title="Spending by category"
+                className={ORDER[5]}
+                fill
+                action={<CardLink to="/reports">Reports</CardLink>}
+              >
+                <DonutChart
+                  label={`Spending by category in ${monthName(s.month.month)}`}
+                  totalLabel="spent"
+                  format={(v) => money(v, { whole: true })}
+                  data={s.month.top.map((c) => ({
+                    key: c.code,
+                    label: c.label,
+                    value: c.cents,
+                    color: cats.color(c.code),
+                  }))}
+                  onSelect={(code) =>
+                    void navigate({
+                      to: "/reports/categories/$code",
+                      params: { code },
+                    })
+                  }
+                />
+              </SectionCard>
+              <SectionCard
+                title="Upcoming"
+                className={ORDER[6]}
+                flush
+                fill
+                action={<CardLink to="/recurring">Recurring</CardLink>}
+              >
+                {s.upcoming.length ? (
+                  <ul className="flex flex-col divide-y divide-border/70">
+                    {(mobile ? s.upcoming.slice(0, 3) : s.upcoming).map((r) => (
+                      <li key={r.key}>
+                        <Link
+                          to="/reports/merchants/$key"
+                          params={{ key: r.key }}
+                          className="flex min-h-12 items-center gap-3 px-5 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted"
+                        >
+                          <MerchantMark name={r.merchant} />
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="line-clamp-2 text-sm font-medium">
+                              {r.merchant}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {relativeDay(
+                                r.nextDate,
+                                meta.data?.today ?? r.nextDate
+                              )}{" "}
+                              · {CADENCE[r.cadence] ?? r.cadence}
+                            </span>
+                          </span>
+                          <Amount
+                            cents={r.amountCents}
+                            className="text-sm whitespace-nowrap"
+                          />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-5 pb-5 text-sm text-muted-foreground">
+                    Nothing due in the next month.
+                  </p>
+                )}
+              </SectionCard>
+            </PageGrid>
+            <PageGrid layout="wide" className="max-lg:contents">
+              <PageStack className="max-lg:contents">
+                {s.review.length ? (
+                  <SectionCard
+                    title={`Needs review · ${s.unreviewed}`}
+                    className={ORDER[3]}
+                    flush
+                    action={
+                      <CardLink
+                        to="/transactions"
+                        search={{ status: "unreviewed" }}
+                      >
+                        Review all
+                      </CardLink>
+                    }
+                  >
+                    <TxnRows
+                      items={mobile ? s.review.slice(0, 3) : s.review}
+                      showAccount={false}
+                      grouped={false}
+                      editable
+                      linkSearch={{
+                        list: { status: "unreviewed" },
+                      }}
+                    />
+                  </SectionCard>
+                ) : null}
+                <SectionCard
+                  title="Recent transactions"
+                  className={ORDER[7]}
+                  flush
+                  action={
+                    <CardLink to="/transactions">All transactions</CardLink>
+                  }
+                >
+                  <TxnRows
+                    items={mobile ? s.recent.slice(0, 5) : s.recent}
+                    showAccount={false}
+                  />
+                </SectionCard>
+              </PageStack>
+              <PageStack className="max-lg:contents">
+                <div className={ORDER[8]}>
+                  <GoalsCard goals={s.goals} />
+                </div>
+                {investments.data?.holdings.length ? (
+                  <SectionCard
+                    title="Investments"
+                    className={ORDER[9]}
+                    action={<CardLink to="/investments">Holdings</CardLink>}
+                  >
+                    <StatRow className="mb-3">
+                      <Stat label="Value">
+                        <Amount
+                          cents={investments.data.totalCents}
+                          tone="plain"
+                          whole
+                        />
+                      </Stat>
+                      <Stat label="Gain on cost">
+                        <Amount
+                          cents={investments.data.gainCents}
+                          tone="signed"
+                          whole
+                        />
+                      </Stat>
+                      {investments.data.performance ? (
+                        <>
+                          <Stat label="Contributions">
+                            <Amount
+                              cents={
+                                investments.data.performance.contributionsCents
+                              }
+                              tone="plain"
+                              whole
+                            />
+                          </Stat>
+                          <Stat label="Market change">
+                            <Amount
+                              cents={investments.data.performance.marketCents}
+                              tone="signed"
+                              whole
+                            />
+                          </Stat>
+                        </>
+                      ) : invPoints.length > 1 ? (
+                        <Stat label="3-month change (incl. deposits)">
+                          <Amount
+                            cents={
+                              investments.data.series.at(-1)!.cents -
+                              investments.data.series[0].cents
+                            }
+                            tone="plain"
+                            whole
+                          />
+                        </Stat>
+                      ) : null}
+                    </StatRow>
+                    <TrendChart
+                      label="Investment value, last 3 months"
+                      baseline="data"
+                      data={invPoints}
+                      config={{
+                        value: { label: "Value", color: "var(--chart-1)" },
+                      }}
+                      format={whole}
+                      formatTick={moneyTick}
+                      formatTime={epochFullDate}
+                      utc
+                      className="h-32"
+                    />
+                  </SectionCard>
+                ) : null}
+                <SectionCard
+                  title="Accounts"
+                  className={ORDER[10]}
+                  flush
+                  action={<CardLink to="/accounts">Accounts</CardLink>}
+                  footer={
+                    meta.data ? (
+                      <Freshness
+                        generatedAt={meta.data.generatedAt}
+                        stale={
+                          meta.data.sources.filter(
+                            (x) => x.status !== "healthy"
+                          ).length
+                        }
+                      />
+                    ) : undefined
+                  }
+                >
+                  <AccountGroups accounts={s.accounts} compact={mobile} />
+                </SectionCard>
+              </PageStack>
+            </PageGrid>
+          </div>
         </>
       )}
     </Page>
@@ -395,12 +491,13 @@ function paceText(spent: number, lastSameDay: number) {
 function BudgetMeter({
   row: r,
   child = false,
+  elapsed,
 }: {
   row: BudgetRow
   child?: boolean
+  elapsed: number
 }) {
   const limit = (r.totalBudgetCents ?? 0) + r.rolloverCents
-  const over = r.totalBudgetCents != null && r.spentCents > limit
   return (
     <Link
       to="/reports/categories/$code"
@@ -419,18 +516,52 @@ function BudgetMeter({
         </span>
       </span>
       {r.totalBudgetCents != null ? (
-        <Meter
+        <BudgetBar
           label={`${r.label} budget used`}
-          value={r.spentCents / (limit || 1)}
-          tone={over ? "over" : "default"}
+          spent={r.spentCents}
+          budget={limit}
+          elapsed={elapsed}
         />
       ) : null}
     </Link>
   )
 }
 
-function AccountGroups({ accounts }: { accounts: Account[] }) {
+/** Accounts by kind; `compact` shows only each kind's total, for a phone. */
+function AccountGroups({
+  accounts,
+  compact = false,
+}: {
+  accounts: Account[]
+  compact?: boolean
+}) {
   const kinds = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
+  if (compact)
+    return (
+      <ul className="flex flex-col divide-y divide-border/70">
+        {kinds.map((kind) => {
+          const list = accounts.filter((a) => accountKind(a) === kind)
+          if (!list.length) return null
+          return (
+            <li
+              key={kind}
+              className="flex min-h-10 items-center justify-between px-5 py-2 text-sm"
+            >
+              <span>
+                {kind}{" "}
+                <span className="text-muted-foreground">· {list.length}</span>
+              </span>
+              <Amount
+                cents={list.reduce((sum, a) => sum + (a.balanceCents ?? 0), 0)}
+                tone="plain"
+                whole
+                className="font-medium"
+              />
+            </li>
+          )
+        })}
+      </ul>
+    )
   return (
     <div className="flex flex-col">
       {kinds.map((kind) => {

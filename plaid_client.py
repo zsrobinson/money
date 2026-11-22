@@ -7,7 +7,10 @@ import urllib.error
 
 ALLOWED = frozenset({"/link/token/create", "/item/public_token/exchange", "/accounts/get",
     "/accounts/balance/get", "/transactions/sync", "/transactions/recurring/get", "/investments/holdings/get",
-    "/item/get", "/institutions/get_by_id"})
+    "/investments/transactions/get", "/liabilities/get", "/item/get", "/institutions/get_by_id"})
+# Liabilities is never a Link product for a new Item: only an additional
+# consent on an existing Item in update mode, then /liabilities/get.
+ADDITIONAL_CONSENT = ["liabilities"]
 
 SANDBOX_CREATE = "/sandbox/public_token/create"
 
@@ -42,7 +45,10 @@ class Client:
             products = payload.get("products", []) + payload.get("optional_products", [])
             if (not products and not payload.get('access_token')) or set(products) - {"transactions", "investments"}:
                 raise ValueError("Only transactions and investments may be requested")
-            if any(k in payload for k in ("additional_consented_products", "required_if_supported_products")):
+            if "required_if_supported_products" in payload:
+                raise ValueError("Unsupported product configuration")
+            if "additional_consented_products" in payload and (not payload.get("access_token") or products
+                    or payload["additional_consented_products"] != ADDITIONAL_CONSENT):
                 raise ValueError("Unsupported product configuration")
         body = json.dumps({**payload, **self.credentials}).encode()
         request = urllib.request.Request(self.base + endpoint, body,

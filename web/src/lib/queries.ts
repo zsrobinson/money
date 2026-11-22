@@ -4,17 +4,28 @@ import { getJson, query, type Params } from "./api"
 import type {
   Account,
   AccountListItem,
-  BudgetRow,
-  BudgetTotals,
+  BuiltReport,
+  Budgets,
+  CashFlow,
   Category,
   Goal,
   Holding,
+  InvestmentTxn,
+  Liability,
   Meta,
   MonthFlow,
+  Neighbors,
+  NetWorthByType,
+  Performance,
+  Position,
   Range,
-  Recurring,
+  RecurringDetail,
+  RecurringList,
   Rule,
+  SavedView,
+  SearchResults,
   Settings,
+  Source,
   Summary,
   Tag,
   Txn,
@@ -66,6 +77,10 @@ export const accountQuery = (id: string, range?: Range) =>
     transactions: number
     recent: Txn[]
     holdings: number
+    balances: { date: string; cents: number }[]
+    closedAt: string | null
+    liability: Liability | null
+    source: Source | null
   }>(
     ["money", "account", id, range],
     `/api/accounts/${encodeURIComponent(id)}${query({ range })}`,
@@ -89,32 +104,30 @@ export const transactionQuery = (id: string) =>
 export const rulesQuery = q<Rule[]>(["money", "rules"], "/api/rules")
 export const ruleQuery = (id: string) =>
   q<Rule>(["money", "rule", id], `/api/rules/${encodeURIComponent(id)}`)
-export const cashflowQuery = (months: number, month?: string) =>
-  q<{
-    months: MonthFlow[]
-    selected: string
-    incomeSources: { key: string; name: string; cents: number; count: number }[]
-    income: {
-      code: string
-      label: string
-      parent: string | null
-      cents: number
-      count: number
-    }[]
-    spending: {
-      code: string
-      label: string
-      parent: string | null
-      cents: number
-      count: number
-    }[]
-  }>(
-    ["money", "cashflow", months, month],
-    `/api/cashflow${query({ months, month })}`,
-    {
-      placeholderData: keepPreviousData,
-    }
+export const cashflowQuery = (params: Params) =>
+  q<CashFlow>(["money", "cashflow", params], `/api/cashflow${query(params)}`, {
+    placeholderData: keepPreviousData,
+  })
+export const reportBuildQuery = (params: Params) =>
+  q<BuiltReport>(
+    ["money", "reports", "build", params],
+    `/api/reports/build${query(params)}`,
+    { placeholderData: keepPreviousData }
   )
+export const networthQuery = (range?: Range) =>
+  q<NetWorthByType>(
+    ["money", "networth", range],
+    `/api/networth${query({ range })}`,
+    { placeholderData: keepPreviousData }
+  )
+export const neighborsQuery = (id: string, params: Params) =>
+  q<Neighbors>(
+    ["money", "neighbors", id, params],
+    `/api/transactions/${encodeURIComponent(id)}/neighbors${query(params)}`
+  )
+export const viewsQuery = q<SavedView[]>(["money", "views"], "/api/views", {
+  staleTime: 60_000,
+})
 export type CategoryReport = {
   range: Range
   from: string
@@ -201,38 +214,21 @@ export const merchantDetailQuery = (key: string) =>
     ["money", "reports", "merchant", key],
     `/api/reports/merchants/${encodeURIComponent(key)}`
   )
-export const trendsQuery = (range: Range) =>
-  q<{
-    range: Range
-    from: string
-    to: string
-    months: string[]
-    categories: { code: string; label: string }[]
-    rows: Record<string, number | string>[]
-  }>(
-    ["money", "reports", "trends", range],
-    `/api/reports/trends${query({ range })}`,
-    {
-      placeholderData: keepPreviousData,
-    }
-  )
 export const budgetsQuery = (month?: string) =>
-  q<{
-    month: string
-    current: string
-    elapsed: number
-    incomeCents: number
-    totals: BudgetTotals
-    rows: BudgetRow[]
-  }>(["money", "budgets", month], `/api/budgets${query({ month })}`, {
+  q<Budgets>(["money", "budgets", month], `/api/budgets${query({ month })}`, {
     placeholderData: keepPreviousData,
   })
-export const recurringQuery = q<{
-  today: string
-  monthlyExpenseCents: number
-  monthlyIncomeCents: number
-  items: Recurring[]
-}>(["money", "recurring"], "/api/recurring")
+export const recurringQuery = (month?: string) =>
+  q<RecurringList>(
+    ["money", "recurring", month],
+    `/api/recurring${query({ month })}`,
+    { placeholderData: keepPreviousData }
+  )
+export const recurringDetailQuery = (key: string) =>
+  q<RecurringDetail>(
+    ["money", "recurring-item", key],
+    `/api/recurring/${encodeURIComponent(key)}`
+  )
 export const investmentsQuery = (range: Range) =>
   q<{
     range: Range
@@ -243,19 +239,45 @@ export const investmentsQuery = (range: Range) =>
     series: { date: string; cents: number }[]
     accounts: (Account & { holdingsCents: number })[]
     holdings: Holding[]
+    positions: Position[]
+    performance: Performance | null
   }>(["money", "investments", range], `/api/investments${query({ range })}`, {
     placeholderData: keepPreviousData,
   })
+export const holdingQuery = (security: string) =>
+  q<{
+    securityId: string
+    ticker: string | null
+    name: string
+    type: string
+    price: number | null
+    quantity: number
+    valueCents: number
+    costBasisCents: number | null
+    gainCents: number | null
+    accounts: {
+      accountId: string
+      accountName: string
+      quantity: number
+      valueCents: number
+      costBasisCents: number | null
+    }[]
+    series: { date: string; cents: number }[]
+    transactions: InvestmentTxn[]
+  }>(
+    ["money", "holding", security],
+    `/api/investments/holdings/${encodeURIComponent(security)}`
+  )
 export const goalsQuery = q<Goal[]>(["money", "goals"], "/api/goals")
 export const goalQuery = (id: string) =>
   q<Goal>(["money", "goal", id], `/api/goals/${encodeURIComponent(id)}`)
 export const settingsQuery = q<Settings>(["money", "settings"], "/api/settings")
 export const searchQuery = (term: string) =>
-  q<{
-    accounts: { id: string; name: string; institution: string }[]
-    merchants: { key: string; name: string; count: number }[]
-    categories: { code: string; label: string }[]
-  }>(["money", "search", term], `/api/search${query({ q: term })}`, {
-    enabled: term.trim().length > 1,
-    staleTime: 30_000,
-  })
+  q<SearchResults>(
+    ["money", "search", term],
+    `/api/search${query({ q: term })}`,
+    {
+      enabled: term.trim().length > 1,
+      staleTime: 30_000,
+    }
+  )

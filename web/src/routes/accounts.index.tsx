@@ -1,11 +1,25 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { Page, PageHeader, PageStack, PageTitle } from "@zsrobinson/shell"
+import {
+  Page,
+  PageActions,
+  PageHeader,
+  PageStack,
+  PageTitle,
+} from "@zsrobinson/shell"
 import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
+import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
+import { PlusIcon } from "lucide-react"
 import { z } from "zod"
+import {
+  ACCOUNT_GROUPS,
+  accountGroup,
+  NetWorthChanges,
+  NetWorthStack,
+} from "@/components/accounts"
 import {
   Amount,
   Change,
@@ -15,19 +29,11 @@ import {
   Stat,
   StatRow,
 } from "@/components/money"
+import { ConnectionStatusLine } from "@/components/sources"
 import { usePageTitle } from "@/lib/crumb"
-import {
-  accountKind,
-  epoch,
-  epochFullDate,
-  money,
-  mask,
-  moneyTick,
-  syncLabel,
-} from "@/lib/format"
-import { SourceList } from "@/components/sources"
-import { accountsQuery, summaryQuery } from "@/lib/queries"
-import type { AccountListItem, Range } from "@/lib/types"
+import { mask, money, syncLabel } from "@/lib/format"
+import { accountsQuery, networthQuery } from "@/lib/queries"
+import type { AccountListItem, NetWorthByType, Range } from "@/lib/types"
 
 export const Route = createFileRoute("/accounts/")({
   validateSearch: z.object({
@@ -37,23 +43,26 @@ export const Route = createFileRoute("/accounts/")({
   component: Accounts,
 })
 
-const KINDS = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
+/** Assets, debts and net worth on the last day of the series. */
+function totals(nw: NetWorthByType | undefined) {
+  const first = nw?.series[0]
+  const last = nw?.series.at(-1)
+  if (!nw || !first || !last) return null
+  let assets = 0
+  let debts = 0
+  for (const g of nw.groups)
+    if (last[g] >= 0) assets += last[g]
+    else debts -= last[g]
+  return { net: last.net, change: last.net - first.net, assets, debts }
+}
 
 function Accounts() {
   usePageTitle("Accounts")
   const accounts = useQuery(accountsQuery)
   const { range } = Route.useSearch()
   const navigate = useNavigate({ from: "/accounts/" })
-  // Totals come from the server: every open account except those you
-  // excluded from net worth, hidden ones included.
-  const summary = useQuery(summaryQuery(range))
-  const nw = summary.data?.netWorth
-  const points = (nw?.series ?? []).map((p) => ({
-    time: epoch(p.date),
-    assets: p.assets / 100,
-    liabilities: p.liabilities / 100,
-    net: p.net / 100,
-  }))
+  const networth = useQuery(networthQuery(range))
+  const t = totals(networth.data)
   const [showHistorical, setShowHistorical] = useState(false)
   const list = accounts.data ?? []
   const open = list.filter((a) => a.availability === "available" && !a.hidden)
@@ -62,7 +71,18 @@ function Accounts() {
     <Page>
       <PageHeader>
         <PageTitle>Accounts</PageTitle>
+        <PageActions>
+          <Button
+            size="sm"
+            render={<Link to="/accounts/new" />}
+            nativeButton={false}
+          >
+            <PlusIcon data-icon="inline-start" />
+            Add account
+          </Button>
+        </PageActions>
       </PageHeader>
+      <ConnectionStatusLine />
       {accounts.isError ? (
         <QueryError
           title="Accounts failed to load"
@@ -75,77 +95,55 @@ function Accounts() {
       ) : (
         <PageStack>
           <SectionCard
-            title="Assets and liabilities"
+            title="Net worth"
             action={
-              summary.data ? (
+              networth.data ? (
                 <RangeSelect
-                  value={summary.data.range}
+                  value={networth.data.range}
                   onChange={(r: Range) =>
                     void navigate({ search: { range: r }, replace: true })
                   }
                 />
               ) : null
             }
+            footer={
+              networth.data ? (
+                <div className="w-full">
+                  <NetWorthChanges data={networth.data} />
+                </div>
+              ) : undefined
+            }
           >
             <StatRow className="mb-4">
               <Stat
                 label="Net worth"
                 detail={
-                  nw ? (
-                    <Change cents={nw.changeCents} suffix="in this range" />
-                  ) : undefined
+                  t ? <Change cents={t.change} suffix="in this range" /> : null
                 }
               >
-                <Amount cents={nw?.cents} tone="plain" whole />
+                <Amount cents={t?.net} tone="plain" whole />
               </Stat>
               <Stat label="Assets">
-                <Amount cents={nw?.assetsCents} tone="plain" whole />
+                <Amount cents={t?.assets} tone="plain" whole />
               </Stat>
               <Stat label="Liabilities">
-                <Amount cents={nw?.liabilitiesCents} tone="plain" whole />
+                <Amount cents={t?.debts} tone="plain" whole />
               </Stat>
             </StatRow>
-            {/* Liabilities get their own axis; on one scale with assets
-                every line flattens. */}
-            <TrendChart
-              label="Assets and net worth over time"
-              loading={!nw}
-              baseline="data"
-              data={points}
-              config={{
-                assets: { label: "Assets", color: "var(--chart-positive)" },
-                net: { label: "Net worth", color: "var(--chart-1)" },
-              }}
-              format={(v) => money(Math.round(v * 100), { whole: true })}
-              formatTime={epochFullDate}
-              formatTick={moneyTick}
-              utc
-              className="h-60"
-            />
-            <TrendChart
-              label="Liabilities over time"
-              loading={!nw}
-              baseline="data"
-              data={points.map((p) => ({ time: p.time, owed: -p.liabilities }))}
-              config={{
-                owed: { label: "Liabilities", color: "var(--chart-negative)" },
-              }}
-              format={(v) => money(Math.round(v * 100), { whole: true })}
-              formatTime={epochFullDate}
-              formatTick={moneyTick}
-              utc
-              legend
-              className="mt-2 h-40"
-            />
+            {networth.data ? (
+              <NetWorthStack data={networth.data} className="h-72" />
+            ) : (
+              <Loading rows={1} className="h-72 [&>*]:h-72" />
+            )}
           </SectionCard>
-          {KINDS.map((kind) => {
-            const group = open.filter((a) => accountKind(a) === kind)
+          {ACCOUNT_GROUPS.map((g) => {
+            const group = open.filter((a) => accountGroup(a).key === g.key)
             if (!group.length) return null
             const total = group.reduce((s, a) => s + (a.balanceCents ?? 0), 0)
             return (
               <SectionCard
-                key={kind}
-                title={kind}
+                key={g.key}
+                title={g.label}
                 flush
                 action={
                   <span className="text-sm font-medium tabular-nums">
@@ -179,9 +177,6 @@ function Accounts() {
               )}
             </SectionCard>
           ) : null}
-          <SectionCard title="Connections" flush>
-            <SourceList />
-          </SectionCard>
         </PageStack>
       )}
     </Page>
@@ -190,7 +185,7 @@ function Accounts() {
 
 function AccountRows({ accounts }: { accounts: AccountListItem[] }) {
   return (
-    <ul className="flex flex-col divide-y divide-border/70">
+    <ul className="flex flex-col divide-y divide-border/70 border-t">
       {accounts.map((a) => (
         <li key={a.id}>
           <Link
@@ -199,18 +194,29 @@ function AccountRows({ accounts }: { accounts: AccountListItem[] }) {
             className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-5 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted sm:grid-cols-[minmax(0,1fr)_8rem_7rem_8rem]"
           >
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">{a.name}</span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-sm font-medium break-words">
+                  {a.name}
+                </span>
+                {a.manual ? (
+                  <Badge variant="outline" className="font-normal">
+                    Manual
+                  </Badge>
+                ) : null}
+              </span>
               {/* Wraps on a phone rather than cutting off a status. */}
               <span className="text-xs text-muted-foreground">
                 {[
-                  a.institution,
+                  a.manual ? null : a.institution,
                   a.mask ? mask(a.mask) : null,
                   a.excludeNetWorth ? "Not in net worth" : null,
+                  a.hidden ? "Hidden" : null,
                   a.availability !== "available" ? "Closed" : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
-                {a.sourceStatus !== "healthy" &&
+                {!a.manual &&
+                a.sourceStatus !== "healthy" &&
                 a.availability === "available" ? (
                   <span className="text-negative">
                     {" · "}

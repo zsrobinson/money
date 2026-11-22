@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   Page,
   PageActions,
@@ -10,14 +10,22 @@ import {
   PageStack,
   PageTitle,
 } from "@zsrobinson/shell"
+import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import {
   DetailList,
   DetailRow,
   Unavailable,
 } from "@zsrobinson/shell/blocks/detail-list"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
+import { Alert, AlertDescription, AlertTitle } from "@zsrobinson/shell/ui/alert"
 import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zsrobinson/shell/ui/dropdown-menu"
 import {
   Field,
   FieldDescription,
@@ -25,18 +33,27 @@ import {
   FieldLabel,
 } from "@zsrobinson/shell/ui/field"
 import { Input } from "@zsrobinson/shell/ui/input"
+import { Kbd } from "@zsrobinson/shell/ui/kbd"
 import { Textarea } from "@zsrobinson/shell/ui/textarea"
-import { Toggle } from "@zsrobinson/shell/ui/toggle"
 import {
+  ArrowLeftRightIcon,
   CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  EllipsisIcon,
   EyeIcon,
   EyeOffIcon,
   ListFilterIcon,
   PlusIcon,
+  RepeatIcon,
   SplitIcon,
   Trash2Icon,
   UndoIcon,
 } from "lucide-react"
+import { z } from "zod"
+import { CategoryPicker } from "@/components/category-picker"
+import { CategoryDot, useCategories } from "@/components/category-style"
+import { TagEditor } from "@/components/tag-editor"
 import {
   Amount,
   CardLink,
@@ -53,12 +70,29 @@ import {
   useCategoryLabels,
 } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
-import { longDate, money, sentenceCase, shortDate } from "@/lib/format"
+import {
+  longDate,
+  money,
+  pluralize,
+  sentenceCase,
+  shortDate,
+} from "@/lib/format"
 import { useSend } from "@/lib/mutations"
-import { categoriesQuery, tagsQuery, transactionQuery } from "@/lib/queries"
+import {
+  categoriesQuery,
+  neighborsQuery,
+  transactionQuery,
+} from "@/lib/queries"
 import type { Split, TxnDetail } from "@/lib/types"
 
 export const Route = createFileRoute("/transactions/$id")({
+  validateSearch: z.object({
+    /** The list this was opened from, to step through it. */
+    list: z
+      .record(z.string(), z.union([z.string(), z.number()]))
+      .optional()
+      .catch(undefined),
+  }),
   staticData: { crumbs: [{ label: "Transactions", to: "/transactions" }] },
   component: TransactionPage,
 })
@@ -88,6 +122,7 @@ function TransactionPage() {
 
 /** What this transaction is, in words a person would use. */
 function kindOf(t: TxnDetail) {
+  if (t.manual) return "Added by hand"
   if (t.flowKind === "bank_transfer") return "Transfer between accounts"
   if (t.flowKind === "peer_payment")
     return t.amountCents > 0 ? "Payment received" : "Payment sent"
@@ -121,26 +156,159 @@ function SaveState({
   )
 }
 
+/** The list to step through: where this was opened from, or the review queue. */
+function useQueue(t: TxnDetail) {
+  const { list } = Route.useSearch()
+  const params = list ?? (t.needsReview ? { status: "unreviewed" } : null)
+  const n = useQuery({
+    ...neighborsQuery(t.id, params ?? {}),
+    enabled: Boolean(params),
+  })
+  return { list: params ?? undefined, n: n.data }
+}
+
 function TransactionView({ t }: { t: TxnDetail }) {
   const categories = useQuery(categoriesQuery)
-  const tags = useQuery(tagsQuery)
   const label = useCategoryLabels()
+  const cats = useCategories()
+  const navigate = useNavigate()
+  const { list, n } = useQueue(t)
+  const go = (id: string | null | undefined) =>
+    id &&
+    void navigate({
+      to: "/transactions/$id",
+      params: { id },
+      search: { list },
+    })
   const patch = useSend<Record<string, unknown>>(
     "PATCH",
     `/api/transactions/${t.id}`
   )
+  const reviewNext = useSend<void>("PATCH", `/api/transactions/${t.id}`, {
+    body: () => ({ reviewed: true }),
+    success: "Reviewed",
+    onSuccess: () =>
+      n?.next
+        ? go(n.next)
+        : void navigate({
+            to: "/transactions",
+            search: { status: "unreviewed" },
+          }),
+  })
   const [splitting, setSplitting] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  /** A category you just chose, to offer it for the merchant's others. */
+  const [chosen, setChosen] = useState<string>()
   const [merchant, setMerchant] = useState(t.merchant ?? "")
   const [note, setNote] = useState(t.note ?? "")
+  const [amount, setAmount] = useState(
+    (Math.abs(t.amountCents) / 100).toFixed(2)
+  )
   const saveMerchant = () => {
     const next = merchant.trim()
     if (next === (t.merchant ?? "")) return
     patch.mutate({
-      merchant: next && next !== t.original.merchant ? next : null,
+      merchant: t.manual
+        ? next || null
+        : next && next !== t.original.merchant
+          ? next
+          : null,
     })
   }
+  const applyAll = useSend<void, { updated: number }>(
+    "POST",
+    "/api/transactions/bulk",
+    {
+      body: () => ({
+        filter: { merchant: t.merchantKey, status: "all" },
+        patch: { category: chosen },
+      }),
+      success: (r) => `Updated ${pluralize(r.updated, "transaction")}`,
+      onSuccess: () => setChosen(undefined),
+    }
+  )
+  const recurring = useSend<void>(
+    "PATCH",
+    `/api/recurring/${encodeURIComponent(t.merchantKey)}`,
+    {
+      body: () => ({ status: "active" }),
+      success: `${txnName(t)} is now recurring`,
+    }
+  )
+  const remove = useSend<void>("DELETE", `/api/transactions/${t.id}`, {
+    success: "Transaction deleted",
+    onSuccess: () => void navigate({ to: "/transactions" }),
+  })
+  const group = categories.data?.find((c) => c.code === t.category)?.group
+  const peerSpending = t.flowKind === "peer_payment" && group !== "transfer"
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        pickerOpen ||
+        el.closest("input, textarea, select, [role=dialog], [role=listbox]")
+      )
+        return
+      if (e.key === "j" || e.key === "ArrowRight") go(n?.next)
+      else if (e.key === "k" || e.key === "ArrowLeft") go(n?.previous)
+      else if (e.key === "r") {
+        if (t.reviewed) patch.mutate({ reviewed: false })
+        else reviewNext.mutate()
+      } else if (e.key === "c" && !t.splits.length) setPickerOpen(true)
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
   return (
-    <Page>
+    <Page className={n && n.total > 0 ? "max-md:pb-24" : undefined}>
+      {n && n.total > 0 ? (
+        // On a phone the review bar sits at the bottom, under the thumb.
+        <div className="flex flex-wrap items-center gap-2 rounded-3xl bg-card px-2 py-1.5 text-sm shadow-sm ring-1 ring-foreground/5 max-md:fixed max-md:inset-x-3 max-md:bottom-3 max-md:z-30 max-md:shadow-lg dark:ring-foreground/10">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Previous transaction"
+            disabled={!n.previous}
+            onClick={() => go(n.previous)}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <span className="text-muted-foreground tabular-nums">
+            {n.index >= 0
+              ? `${(n.index + 1).toLocaleString()} of ${n.total.toLocaleString()}`
+              : `${n.total.toLocaleString()} left`}
+          </span>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Next transaction"
+            disabled={!n.next}
+            onClick={() => go(n.next)}
+          >
+            <ChevronRightIcon />
+          </Button>
+          <span className="hidden items-center gap-1 text-xs text-muted-foreground lg:flex">
+            <Kbd>j</Kbd>
+            <Kbd>k</Kbd> move · <Kbd>r</Kbd> reviewed · <Kbd>c</Kbd> category
+          </span>
+          {t.needsReview ? (
+            <Button
+              size="sm"
+              className="ml-auto"
+              disabled={reviewNext.isPending}
+              onClick={() => reviewNext.mutate()}
+            >
+              <CheckIcon data-icon="inline-start" />
+              {n.next ? "Mark reviewed and next" : "Mark reviewed"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <PageHeader>
         <div className="flex min-w-0 items-center gap-3">
           <MerchantMark
@@ -160,26 +328,38 @@ function TransactionView({ t }: { t: TxnDetail }) {
               </Link>
               {t.pending ? <Badge variant="outline">Pending</Badge> : null}
               {t.hidden ? <Badge variant="secondary">Hidden</Badge> : null}
+              {t.manual ? <Badge variant="outline">Manual</Badge> : null}
+              {t.reviewed ? (
+                <Badge variant="outline">Reviewed</Badge>
+              ) : t.needsReview ? (
+                <Badge variant="outline" className="gap-1.5">
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  Needs review
+                </Badge>
+              ) : null}
             </PageMeta>
           </div>
         </div>
         <PageActions>
-          <Button
-            size="sm"
-            variant={t.reviewed ? "outline" : "default"}
-            disabled={patch.isPending}
-            onClick={() => patch.mutate({ reviewed: !t.reviewed })}
-          >
-            {t.reviewed ? (
-              <UndoIcon data-icon="inline-start" />
-            ) : (
-              <CheckIcon data-icon="inline-start" />
-            )}
-            {t.reviewed ? "Mark not reviewed" : "Mark reviewed"}
-          </Button>
+          {!t.needsReview || !n?.total ? (
+            <Button
+              size="sm"
+              variant={t.reviewed ? "outline" : "default"}
+              disabled={patch.isPending}
+              onClick={() => patch.mutate({ reviewed: !t.reviewed })}
+            >
+              {t.reviewed ? (
+                <UndoIcon data-icon="inline-start" />
+              ) : (
+                <CheckIcon data-icon="inline-start" />
+              )}
+              {t.reviewed ? "Mark not reviewed" : "Mark reviewed"}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="outline"
+            className="max-sm:hidden"
             disabled={patch.isPending}
             onClick={() => patch.mutate({ hidden: !t.hidden })}
           >
@@ -190,8 +370,117 @@ function TransactionView({ t }: { t: TxnDetail }) {
             )}
             {t.hidden ? "Show in totals" : "Hide from totals"}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="More actions"
+                />
+              }
+            >
+              <EllipsisIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem
+                className="sm:hidden"
+                onClick={() => patch.mutate({ hidden: !t.hidden })}
+              >
+                {t.hidden ? <EyeIcon /> : <EyeOffIcon />}
+                {t.hidden ? "Show in totals" : "Hide from totals"}
+              </DropdownMenuItem>
+              {t.merchantKey &&
+              group !== "transfer" &&
+              t.flowKind !== "peer_payment" ? (
+                t.recurringStatus === "active" ? (
+                  <DropdownMenuItem
+                    render={
+                      <Link
+                        to="/recurring/$key"
+                        params={{ key: t.merchantKey }}
+                      />
+                    }
+                  >
+                    <RepeatIcon />
+                    View recurring
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={() => recurring.mutate()}>
+                    <RepeatIcon />
+                    Mark as recurring
+                  </DropdownMenuItem>
+                )
+              ) : null}
+              <DropdownMenuItem
+                render={
+                  <Link
+                    to="/rules/new"
+                    search={{
+                      merchant:
+                        t.original.merchant ?? t.description ?? undefined,
+                      category: t.category,
+                      account: undefined,
+                    }}
+                  />
+                }
+              >
+                <ListFilterIcon />
+                Create rule
+              </DropdownMenuItem>
+              {t.manual ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => document.getElementById("delete-txn")?.click()}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {t.manual ? (
+            <ConfirmAction
+              trigger={
+                <button id="delete-txn" type="button" className="hidden" />
+              }
+              title="Delete this transaction?"
+              confirmLabel="Delete"
+              destructive
+              onConfirm={() => remove.mutateAsync()}
+            >
+              It leaves every total and the account’s balance.
+            </ConfirmAction>
+          ) : null}
         </PageActions>
       </PageHeader>
+      {peerSpending ? (
+        <Alert>
+          <ArrowLeftRightIcon />
+          <AlertTitle>
+            Peer payment, counted as{" "}
+            {t.amountCents < 0 ? "spending" : "money back"}
+          </AlertTitle>
+          <AlertDescription>
+            <p>
+              If this only moved your own money, count it as a transfer instead.
+              A rule with Kind “Peer payments” can do this for you.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={patch.isPending}
+                onClick={() =>
+                  patch.mutate({ category: "bank_transfer", reviewed: true })
+                }
+              >
+                This was a transfer
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <PageGrid layout="wide">
         <PageStack>
           <SectionCard
@@ -204,11 +493,35 @@ function TransactionView({ t }: { t: TxnDetail }) {
               />
             }
           >
-            <Amount
-              cents={t.amountCents}
-              currency={t.currency}
-              className="mb-5 block text-3xl font-semibold tracking-tight"
-            />
+            {t.manual ? (
+              <Field className="mb-5 max-w-56">
+                <FieldLabel htmlFor="txn-amount">
+                  {t.amountCents < 0 ? "Amount spent" : "Amount received"}
+                </FieldLabel>
+                <Input
+                  id="txn-amount"
+                  inputMode="decimal"
+                  className="text-right text-lg tabular-nums"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  onBlur={() => {
+                    const cents = Math.round(
+                      Number(amount.replace(/[^0-9.]/g, "")) * 100
+                    )
+                    if (!cents || cents === Math.abs(t.amountCents)) return
+                    patch.mutate({
+                      amountCents: Math.sign(t.amountCents) * cents,
+                    })
+                  }}
+                />
+              </Field>
+            ) : (
+              <Amount
+                cents={t.amountCents}
+                currency={t.currency}
+                className="mb-5 block text-3xl font-semibold tracking-tight"
+              />
+            )}
             <FieldGroup className="@container">
               <Field>
                 <FieldLabel htmlFor="txn-category">Category</FieldLabel>
@@ -219,23 +532,30 @@ function TransactionView({ t }: { t: TxnDetail }) {
                   >
                     <SplitIcon className="size-4 text-muted-foreground" />
                     Split · {t.splits.length} categories
+                    {t.ruleSplit ? " by a rule" : ""}
                   </a>
                 ) : (
                   <div className="flex gap-2">
-                    <CategorySelect
+                    <CategoryPicker
                       id="txn-category"
+                      label="Category"
                       categories={categories.data ?? []}
                       value={t.category}
                       disabled={patch.isPending}
-                      onChange={(code) =>
+                      open={pickerOpen}
+                      onOpenChange={setPickerOpen}
+                      onChange={(code) => {
                         patch.mutate({
                           category:
+                            !t.manual &&
                             code === t.original.category &&
                             !t.rules.some((r) => r.action.category)
                               ? null
                               : code,
+                          reviewed: true,
                         })
-                      }
+                        setChosen(code)
+                      }}
                     />
                     <Button
                       variant="outline"
@@ -247,7 +567,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
                     </Button>
                   </div>
                 )}
-                {!t.splits.length && t.overridden.category ? (
+                {!t.splits.length && t.overridden.category && !t.manual ? (
                   <FieldDescription>
                     Originally {label(t.original.category)}.{" "}
                     <button
@@ -258,6 +578,57 @@ function TransactionView({ t }: { t: TxnDetail }) {
                       Restore
                     </button>
                   </FieldDescription>
+                ) : null}
+                {chosen &&
+                chosen === t.category &&
+                t.merchantOtherCategory > 0 ? (
+                  <Alert className="mt-2">
+                    <AlertTitle>
+                      Use {label(chosen)} for {txnName(t)} every time?
+                    </AlertTitle>
+                    <AlertDescription>
+                      {pluralize(t.merchantOtherCategory, "other transaction")}{" "}
+                      from {txnName(t)}{" "}
+                      {t.merchantOtherCategory === 1 ? "has" : "have"} a
+                      different category.
+                    </AlertDescription>
+                    <div className="col-start-2 mt-2 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        disabled={applyAll.isPending}
+                        onClick={() => applyAll.mutate()}
+                      >
+                        Apply to all {t.merchantCount}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        render={
+                          <Link
+                            to="/rules/new"
+                            search={{
+                              merchant:
+                                t.original.merchant ??
+                                t.description ??
+                                undefined,
+                              category: chosen,
+                              account: undefined,
+                            }}
+                          />
+                        }
+                        nativeButton={false}
+                      >
+                        Create rule
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setChosen(undefined)}
+                      >
+                        Just this one
+                      </Button>
+                    </div>
+                  </Alert>
                 ) : null}
               </Field>
               <div className="grid gap-4 @lg:grid-cols-2">
@@ -288,7 +659,8 @@ function TransactionView({ t }: { t: TxnDetail }) {
                     onChange={(date) =>
                       date &&
                       patch.mutate({
-                        date: date === t.original.date ? null : date,
+                        date:
+                          !t.manual && date === t.original.date ? null : date,
                       })
                     }
                   />
@@ -322,69 +694,12 @@ function TransactionView({ t }: { t: TxnDetail }) {
               </Field>
               <Field>
                 <FieldLabel>Tags</FieldLabel>
-                <div className="flex flex-wrap gap-1.5">
-                  {(tags.data ?? []).map((tag) => (
-                    <Toggle
-                      key={tag.id}
-                      size="sm"
-                      variant="outline"
-                      pressed={t.tags.includes(tag.id)}
-                      onPressedChange={(next) =>
-                        patch.mutate({
-                          tags: next
-                            ? [...t.tags, tag.id]
-                            : t.tags.filter((x) => x !== tag.id),
-                        })
-                      }
-                    >
-                      {tag.name}
-                    </Toggle>
-                  ))}
-                  {!tags.data?.length ? (
-                    <span className="text-sm text-muted-foreground">
-                      No tags yet.{" "}
-                      <Link
-                        to="/settings"
-                        hash="tags"
-                        className="underline underline-offset-4"
-                      >
-                        Create tags
-                      </Link>
-                    </span>
-                  ) : null}
-                </div>
+                <TagEditor
+                  value={t.tags}
+                  onChange={(next) => patch.mutate({ tags: next })}
+                />
               </Field>
             </FieldGroup>
-          </SectionCard>
-        </PageStack>
-        <PageStack>
-          <SectionCard title="From the bank">
-            <DetailList>
-              <DetailRow label="Posted">{shortDate(t.original.date)}</DetailRow>
-              <DetailRow label="Authorized">
-                {t.authorizedDate ? (
-                  shortDate(t.authorizedDate)
-                ) : (
-                  <Unavailable />
-                )}
-              </DetailRow>
-              <DetailRow label="Description">
-                <span className="truncate">
-                  {t.description ?? <Unavailable />}
-                </span>
-              </DetailRow>
-              <DetailRow label="Category">
-                {label(t.original.category)}
-              </DetailRow>
-              <DetailRow label="Channel">
-                {t.paymentChannel ? (
-                  sentenceCase(t.paymentChannel)
-                ) : (
-                  <Unavailable />
-                )}
-              </DetailRow>
-              <DetailRow label="Type">{kindOf(t)}</DetailRow>
-            </DetailList>
           </SectionCard>
           {t.splits.length || splitting ? (
             <SplitEditor
@@ -393,6 +708,40 @@ function TransactionView({ t }: { t: TxnDetail }) {
               onEditingChange={setSplitting}
             />
           ) : null}
+        </PageStack>
+        <PageStack>
+          {t.manual ? null : (
+            <SectionCard title="From the bank">
+              <DetailList>
+                <DetailRow label="Posted">
+                  {shortDate(t.original.date)}
+                </DetailRow>
+                <DetailRow label="Authorized">
+                  {t.authorizedDate ? (
+                    shortDate(t.authorizedDate)
+                  ) : (
+                    <Unavailable />
+                  )}
+                </DetailRow>
+                <DetailRow label="Description">
+                  <span className="truncate">
+                    {t.description ?? <Unavailable />}
+                  </span>
+                </DetailRow>
+                <DetailRow label="Category">
+                  {label(t.original.category)}
+                </DetailRow>
+                <DetailRow label="Channel">
+                  {t.paymentChannel ? (
+                    sentenceCase(t.paymentChannel)
+                  ) : (
+                    <Unavailable />
+                  )}
+                </DetailRow>
+                <DetailRow label="Type">{kindOf(t)}</DetailRow>
+              </DetailList>
+            </SectionCard>
+          )}
           {t.pair ? (
             <SectionCard title="Matching transfer" flush>
               <TxnRows items={[t.pair]} />
@@ -417,7 +766,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
                 }
                 nativeButton={false}
               >
-                <ListFilterIcon data-icon="inline-start" />
+                <PlusIcon data-icon="inline-start" />
                 Create rule
               </Button>
             }
@@ -442,9 +791,9 @@ function TransactionView({ t }: { t: TxnDetail }) {
           </SectionCard>
         </PageStack>
       </PageGrid>
-      {t.similar.length ? (
+      {t.similar.length && t.flowKind !== "peer_payment" ? (
         <SectionCard
-          title="Other transactions here"
+          title={`More from ${txnName(t)}`}
           flush
           action={
             <CardLink
@@ -455,7 +804,32 @@ function TransactionView({ t }: { t: TxnDetail }) {
             </CardLink>
           }
         >
-          <TxnRows items={t.similar} showAccount={false} />
+          <ul className="flex flex-col divide-y divide-border/70">
+            {t.similar.map((x) => (
+              <li key={x.id}>
+                <Link
+                  to="/transactions/$id"
+                  params={{ id: x.id }}
+                  className="grid min-h-11 grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2 text-sm outline-none hover:bg-muted/60 focus-visible:bg-muted"
+                >
+                  <span className="text-muted-foreground tabular-nums">
+                    {shortDate(x.date)}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                    <CategoryDot color={cats.get(x.category)?.color} />
+                    <span className="truncate">
+                      {x.split ? "Split" : label(x.category)}
+                    </span>
+                  </span>
+                  <Amount
+                    cents={x.amountCents}
+                    currency={x.currency}
+                    className="text-right font-medium"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </SectionCard>
       ) : null}
     </Page>

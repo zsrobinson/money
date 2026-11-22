@@ -1,8 +1,14 @@
 // Create or upgrade the app database only. Never opens the detail snapshot,
 // so an installer can run it before the first sync.
-import { openAppDb, SCHEMA_VERSION } from "./app-db.ts"
+import { openAppDb, publishAppSnapshot, SCHEMA_VERSION } from "./app-db.ts"
+
+import { assertProductionPaths } from "./fixture-guard.ts"
 
 const path = process.env.MONEY_APP_DB
 if (!path) throw new Error("Missing MONEY_APP_DB")
-openAppDb(path).close()
+if (process.env.NODE_ENV !== "production") assertProductionPaths(process.env)
+const db = openAppDb(path)
+if (process.env.MONEY_APP_SNAPSHOT)
+  publishAppSnapshot(db, process.env.MONEY_APP_SNAPSHOT)
+db.close()
 console.log(JSON.stringify({ migrated: true, schemaVersion: SCHEMA_VERSION }))

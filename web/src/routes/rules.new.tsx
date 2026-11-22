@@ -9,6 +9,7 @@ export const Route = createFileRoute("/rules/new")({
     merchant: z.string().optional(),
     category: z.string().optional(),
     account: z.string().optional(),
+    flow: z.enum(["activity", "bank_transfer", "peer_payment"]).optional(),
   }),
   staticData: { crumbs: [{ label: "Rules", to: "/rules" }] },
   component: NewRule,

@@ -378,3 +378,119 @@ export function EmptyState({
     </Empty>
   )
 }
+
+/**
+ * A small segmented control (the report tabs' look) for two to four
+ * choices, such as chart type or a view toggle.
+ */
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  size = "sm",
+  className,
+}: {
+  value: T
+  onChange: (value: T) => void
+  options: { value: T; label: ReactNode; title?: string }[]
+  label: string
+  size?: "sm" | "xs"
+  className?: string
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className={cn(
+        "flex w-fit shrink-0 gap-0.5 rounded-full bg-muted p-0.5",
+        className
+      )}
+    >
+      {options.map((o) => {
+        const active = o.value === value
+        return (
+          <Button
+            key={o.value}
+            role="radio"
+            aria-checked={active}
+            title={o.title}
+            size={size}
+            variant={active ? "outline" : "ghost"}
+            className={cn(
+              size === "xs" && "h-6 px-2.5 text-xs",
+              active
+                ? "bg-background shadow-xs dark:bg-background"
+                : "text-muted-foreground"
+            )}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </Button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Budget progress: the budget fills in the hue, anything over it in red at
+ * the end so the overrun shows its size, and a tick marks how much of the
+ * month has gone.
+ */
+export function BudgetBar({
+  spent,
+  budget,
+  elapsed,
+  label,
+}: {
+  spent: number
+  budget: number
+  /** 0–1 of the period gone; no tick outside (0, 1). */
+  elapsed?: number
+  label: string
+}) {
+  const scale = Math.max(budget, spent, 1)
+  const within = Math.max(0, Math.min(spent, budget)) / scale
+  const over = spent > budget ? (spent - Math.max(0, budget)) / scale : 0
+  const ahead =
+    elapsed !== undefined &&
+    elapsed > 0 &&
+    elapsed < 1 &&
+    budget > 0 &&
+    spent <= budget &&
+    spent / budget > elapsed + 0.1
+  return (
+    <div
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={Math.max(budget, 0)}
+      aria-valuenow={Math.max(0, spent)}
+      className="relative h-1.5 w-full rounded-full bg-muted"
+    >
+      <div className="flex h-full w-full overflow-hidden rounded-full">
+        <div
+          className="h-full bg-primary"
+          style={{ width: `${within * 100}%` }}
+        />
+        {over > 0 ? (
+          <div
+            className="h-full border-l-2 border-background bg-negative"
+            style={{ width: `${over * 100}%` }}
+          />
+        ) : null}
+      </div>
+      {elapsed !== undefined && elapsed > 0 && elapsed < 1 && budget > 0 ? (
+        <div
+          aria-hidden
+          className={cn(
+            "absolute -top-0.5 h-2.5 w-0.5 rounded-full",
+            ahead ? "bg-warning" : "bg-foreground/60"
+          )}
+          style={{ left: `calc(${(budget * elapsed) / scale} * 100% - 1px)` }}
+        />
+      ) : null}
+    </div>
+  )
+}

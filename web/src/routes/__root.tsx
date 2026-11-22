@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useQuery, type QueryClient } from "@tanstack/react-query"
 import {
   createRootRouteWithContext,
@@ -20,6 +21,8 @@ import {
   LandmarkIcon,
   LayoutDashboardIcon,
   ListFilterIcon,
+  ShapesIcon,
+  StoreIcon,
   PlusIcon,
   ReceiptTextIcon,
   RepeatIcon,
@@ -33,8 +36,10 @@ import {
   accountsQuery,
   categoriesQuery,
   metaQuery,
+  searchQuery,
   sessionQuery,
 } from "@/lib/queries"
+import { money, shortDate } from "@/lib/format"
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -100,7 +105,7 @@ function Root() {
               active: pathname === "/reports" || at("/reports/categories"),
             },
             link("reports-merchants", "Merchants", "/reports/merchants", null),
-            link("reports-trends", "Trends", "/reports/trends", null),
+            link("reports-builder", "Builder", "/reports/builder", null),
           ],
         }),
       ],
@@ -119,6 +124,7 @@ function Root() {
       id: "setup",
       label: "Setup",
       items: [
+        link("categories", "Categories", "/categories", <ShapesIcon />),
         link("rules", "Rules", "/rules", <ListFilterIcon />),
         link("settings", "Settings", "/settings", <SettingsIcon />),
       ],
@@ -176,6 +182,45 @@ function Root() {
       ],
     },
   ]
+  // Merchants and transactions come from the server as you type.
+  const [typed, setTyped] = useState("")
+  const [term, setTerm] = useState("")
+  useEffect(() => {
+    const id = setTimeout(() => setTerm(typed.trim()), 200)
+    return () => clearTimeout(id)
+  }, [typed])
+  const found = useQuery(searchQuery(term))
+  const searchGroups: NavGroup[] =
+    term.length > 1 && found.data
+      ? [
+          {
+            id: "search-merchants",
+            label: "Merchants",
+            items: found.data.merchants.map((m) =>
+              link(
+                `merchant-${m.key}`,
+                m.name,
+                `/reports/merchants/${encodeURIComponent(m.key)}`,
+                <StoreIcon />,
+                { active: false }
+              )
+            ),
+          },
+          {
+            id: "search-transactions",
+            label: "Transactions",
+            items: found.data.transactions.map((t) =>
+              link(
+                `txn-${t.id}`,
+                `${t.merchant ?? t.description ?? "Transaction"} · ${shortDate(t.date, meta.data?.today)} · ${money(t.amountCents)}`,
+                `/transactions/${t.id}`,
+                <ReceiptTextIcon />,
+                { active: false }
+              )
+            ),
+          },
+        ].filter((g) => g.items.length)
+      : []
   const signedOut =
     session.error instanceof ApiError && session.error.status === 401
   return (
@@ -184,7 +229,12 @@ function Root() {
       email={session.data?.email}
       apps={session.isError ? [] : session.data?.services}
       navGroups={groups}
-      searchPlaceholder="Jump to a page, account or category…"
+      searchPlaceholder="Search pages, merchants and transactions…"
+      search={{
+        onQueryChange: setTyped,
+        groups: searchGroups,
+        loading: term.length > 1 && found.isFetching,
+      }}
       breadcrumbs={<AppBreadcrumbs />}
     >
       {signedOut ? <SignedOut /> : <Outlet />}

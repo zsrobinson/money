@@ -8,7 +8,7 @@ import math
 from datetime import date, timedelta
 from pathlib import Path
 from store import connect, ingest_accounts, ingest_transactions, ingest_holdings, fingerprint
-from detail import publish, opaque, cents
+from detail import publish, opaque, cents, ingest_investment_transactions, ingest_liabilities
 
 
 def generate(root):
@@ -61,6 +61,14 @@ def generate(root):
             day+=timedelta(days=1)
         ingest_transactions(db,'bank',{'added':tx})
         ingest_holdings(db,'broker',{'securities':[{'security_id':'demo','ticker_symbol':'DEMO','name':'Demonstration Market Fund','type':'etf'},{'security_id':'sample','ticker_symbol':'SAMP','name':'Sample Bond Fund','type':'etf'}],'holdings':[{'account_id':'brokerage','security_id':'demo','quantity':70,'institution_value':22890,'cost_basis':18500,'iso_currency_code':'USD'},{'account_id':'brokerage','security_id':'sample','quantity':50,'institution_value':9810,'cost_basis':8900,'iso_currency_code':'USD'}]})
+        securities=[{'security_id':'demo','ticker_symbol':'DEMO','name':'Demonstration Market Fund','type':'etf'},{'security_id':'sample','ticker_symbol':'SAMP','name':'Sample Bond Fund','type':'etf'}]
+        trades=[]
+        for n in range(24):
+            month=date(2024+(11+n)//12,(11+n)%12+1,3).isoformat()
+            trades.append({'investment_transaction_id':'buy-'+month,'account_id':'brokerage','security_id':'demo','date':month,'type':'buy','subtype':'buy','quantity':1,'price':280+2*n,'amount':280+2*n,'fees':0})
+            if n%3==2:trades.append({'investment_transaction_id':'div-'+month,'account_id':'brokerage','security_id':'sample','date':month,'type':'cash','subtype':'dividend','quantity':0,'price':0,'amount':-12.5,'fees':0})
+        ingest_investment_transactions(db,'broker',{'start_date':'2024-11-20','investment_transactions':trades,'securities':securities})
+        ingest_liabilities(db,'bank',{'liabilities':{'credit':[{'account_id':'card','aprs':[{'apr_type':'purchase_apr','apr_percentage':22.49}],'is_overdue':False,'last_payment_amount':450,'last_payment_date':'2026-10-25','last_statement_issue_date':'2026-11-05','last_statement_balance':1104.32,'minimum_payment_amount':40,'next_payment_due_date':'2026-11-30'}]}})
         for i,day in enumerate(['2026-10-11','2026-11-04','2026-11-15']):
             db.execute('INSERT INTO venmo_rows VALUES(?,?,?,?)',(day,1800+i*500,'out' if i%2 else 'in','peer_sent' if i%2 else 'peer_received'))
         db.commit();publish(db,root/'detail.sqlite')

@@ -111,7 +111,7 @@ export function sampleDates(from: string, to: string, maxPoints = 120) {
 
 export function earliestDate(c: Computed) {
   let earliest = c.today
-  for (const list of c.detail.balanceHistory.values())
+  for (const list of c.balanceHistory.values())
     if (list.length && list[0].date < earliest) earliest = list[0].date
   const last = c.txns.at(-1)
   if (last && last.date < earliest) earliest = last.date
@@ -124,7 +124,7 @@ export function accountSeries(
   account: AccountView,
   dates: string[]
 ) {
-  const history = c.detail.balanceHistory.get(account.id) ?? []
+  const history = c.balanceHistory.get(account.id) ?? []
   const at = balanceAt(history)
   const sign = account.liability ? -1 : 1
   // A closed account stops at its last reported balance instead of carrying
@@ -270,6 +270,42 @@ const HINT: Record<string, string> = {
 }
 export const cadenceDays = (id: string | null | undefined) =>
   CADENCES.find((c) => c.id === id)?.days ?? 30
+const MONTHS_PER: Record<string, number> = {
+  monthly: 1,
+  quarterly: 3,
+  yearly: 12,
+}
+/** Same day of the month n months on, clamped to the month's last day. */
+function shiftMonths(date: string, n: number, day = Number(date.slice(8, 10))) {
+  const month = addMonths(date.slice(0, 7), n)
+  const last = Number(monthEnd(month).slice(8, 10))
+  return `${month}-${String(Math.min(day, last)).padStart(2, "0")}`
+}
+/** The charge after `date` on this cadence; monthly ones keep their day. */
+export function nextOccurrence(date: string, cadence: string, step = 1) {
+  const months = MONTHS_PER[cadence]
+  return months
+    ? shiftMonths(date, months * step)
+    : addDays(date, cadenceDays(cadence) * step)
+}
+/** Expected charge dates between from and to, projected from the last one. */
+export function occurrences(
+  last: string,
+  cadence: string,
+  from: string,
+  to: string
+) {
+  const out: string[] = []
+  // Step back to before the window, then forward through it.
+  let n = 0
+  while (nextOccurrence(last, cadence, n) > from && n > -600) n--
+  for (let d = nextOccurrence(last, cadence, n); d <= to && out.length < 64;) {
+    if (d >= from) out.push(d)
+    n++
+    d = nextOccurrence(last, cadence, n)
+  }
+  return out
+}
 const median = (xs: number[]) => {
   const s = xs.toSorted((a, b) => a - b)
   const m = s.length >> 1
@@ -282,6 +318,7 @@ export type RecurringItem = {
   kind: "expense" | "income"
   cadence: string
   cadenceSource: "detected" | "provider" | "manual"
+  manual: boolean
   amountCents: number
   lastDate: string
   nextDate: string
@@ -316,8 +353,9 @@ export function detectRecurring(
   const items: RecurringItem[] = []
   for (const [key, list] of groups) {
     const override = overrides.get(key)
+    const marked = list.some((t) => t.markedRecurring)
     const sorted = list.toSorted((a, b) => (a.date < b.date ? -1 : 1))
-    if (sorted.length < 3 && !override) continue
+    if (sorted.length < 3 && !override && !marked) continue
     const gaps = sorted
       .slice(1)
       .map((t, i) => (fromDate(t.date) - fromDate(sorted[i].date)) / DAY)
@@ -336,11 +374,16 @@ export function detectRecurring(
       gaps.length >= 2 &&
       gaps.filter((g) => Math.abs(g - gap) <= Math.max(4, gap * 0.2)).length >=
         gaps.length * 0.7
-    if (!override && !hinted && (!detected || !regular || spread > 0.6))
+    if (
+      !override &&
+      !marked &&
+      !hinted &&
+      (!detected || !regular || spread > 0.6)
+    )
       continue
     const cadence = override?.cadence ?? hinted ?? detected ?? "monthly"
     const last = sorted.at(-1)!
-    const nextDate = addDays(last.date, cadenceDays(cadence))
+    const nextDate = nextOccurrence(last.date, cadence)
     const lapsed =
       fromDate(c.today) - fromDate(last.date) > cadenceDays(cadence) * 2 * DAY
     const status = (
@@ -360,6 +403,8 @@ export function detectRecurring(
         : hinted
           ? "provider"
           : "detected",
+      /** You added it, rather than detection finding it. */
+      manual: Boolean(override || marked) && sorted.length < 3,
       amountCents: override?.expected_cents ?? Math.round(typical),
       lastDate: last.date,
       nextDate,
@@ -367,9 +412,11 @@ export function detectRecurring(
       status,
       accountId: last.accountId,
       category: last.categoryEff,
-      history: sorted
-        .slice(-12)
-        .map((t) => ({ date: t.date, amountCents: t.amountCents, id: t.id })),
+      history: sorted.map((t) => ({
+        date: t.date,
+        amountCents: t.amountCents,
+        id: t.id,
+      })),
     })
   }
   return items.sort((a, b) => (a.nextDate < b.nextDate ? -1 : 1))

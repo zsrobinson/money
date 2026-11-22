@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   Page,
   PageActions,
@@ -8,11 +8,12 @@ import {
   PageMeta,
   PageTitle,
 } from "@zsrobinson/shell"
-import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
+import { TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { ArrowRightIcon } from "lucide-react"
 import { Loading, Meter, SectionCard, Stat, StatRow } from "@/components/money"
+import { categoryColor, useCategories } from "@/components/category-style"
 import { usePageTitle } from "@/lib/crumb"
 import {
   epochMonthYear,
@@ -20,6 +21,7 @@ import {
   moneyTick,
   monthEpoch,
   pluralize,
+  percent,
 } from "@/lib/format"
 import { budgetsQuery, categoryDetailQuery } from "@/lib/queries"
 
@@ -34,16 +36,18 @@ export const Route = createFileRoute("/reports/categories/$code")({
 })
 
 function CategoryDetail() {
+  const cats = useCategories()
   const { code } = Route.useParams()
-  const navigate = useNavigate()
   const q = useQuery(categoryDetailQuery(code))
   const budgets = useQuery(budgetsQuery())
   usePageTitle(q.data?.category.label, true)
   const d = q.data
   const income = d?.category.group === "income"
-  const budget = budgets.data?.rows.find((r) => r.code === code)
+  const budget = budgets.data?.expenses.find((r) => r.code === code)
   const thisMonth = d?.monthly.at(-1)?.cents ?? 0
-  const parent = budgets.data?.rows.find((r) => r.code === d?.category.parent)
+  const parent = budgets.data?.expenses.find(
+    (r) => r.code === d?.category.parent
+  )
   const maxMerchant = Math.max(1, ...(d?.merchants.map((m) => m.cents) ?? [1]))
   const chart = d ? (
     <TrendChart
@@ -148,33 +152,25 @@ function CategoryDetail() {
             <PageGrid layout="wide" className="items-stretch">
               <SectionCard title="By month">{chart}</SectionCard>
               <SectionCard title="Includes" fill>
-                {/* The last 12 months split between the categories inside it and the rest. */}
-                <DonutChart
-                  label={`${d.category.label} by category inside it, last 12 months`}
-                  totalLabel="12 months"
-                  format={(v) => money(v, { whole: true })}
-                  data={[
+                {/* The last 12 months split between the categories inside it and the rest, as bars. */}
+                <Includes
+                  rows={[
                     ...d.children.map((c) => ({
-                      key: c.code,
+                      code: c.code,
                       label: c.label,
-                      value: c.cents,
+                      cents: c.cents,
+                      color: cats.get(c.code)?.color ?? null,
                     })),
                     {
-                      key: d.category.code,
-                      label: `Other ${d.category.label.toLowerCase()}`,
-                      value:
+                      code: null,
+                      label: "Everything else",
+                      cents:
                         d.totalCents -
                         d.children.reduce((sum, c) => sum + c.cents, 0),
-                      color: "var(--chart-neutral)",
+                      color: null,
                     },
                   ]}
-                  onSelect={(key) =>
-                    key !== d.category.code &&
-                    void navigate({
-                      to: "/reports/categories/$code",
-                      params: { code: key },
-                    })
-                  }
+                  total={d.totalCents}
                 />
               </SectionCard>
             </PageGrid>
@@ -220,5 +216,66 @@ function CategoryDetail() {
         </>
       )}
     </Page>
+  )
+}
+
+/** Each category inside this one, and the rest, with its share of the total. */
+function Includes({
+  rows,
+  total,
+}: {
+  rows: {
+    code: string | null
+    label: string
+    cents: number
+    color: string | null
+  }[]
+  total: number
+}) {
+  const sorted = rows
+    .filter((r) => r.cents !== 0)
+    .sort((a, b) => b.cents - a.cents)
+  return (
+    <ul className="flex flex-col gap-3">
+      {sorted.map((r) => {
+        const body = (
+          <>
+            <span className="flex justify-between gap-3 text-sm">
+              <span className="truncate">{r.label}</span>
+              <span className="shrink-0 tabular-nums">
+                {money(r.cents, { whole: true })}
+                <span className="ml-2 inline-block w-9 text-right text-xs text-muted-foreground">
+                  {total > 0 ? percent(r.cents / total) : ""}
+                </span>
+              </span>
+            </span>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${total > 0 ? Math.max(0, r.cents / total) * 100 : 0}%`,
+                  backgroundColor: categoryColor(r.color),
+                }}
+              />
+            </div>
+          </>
+        )
+        return (
+          <li key={r.code ?? "rest"}>
+            {r.code ? (
+              <Link
+                to="/reports/categories/$code"
+                params={{ code: r.code }}
+                className="flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {body}
+              </Link>
+            ) : (
+              <div className="flex flex-col gap-1.5">{body}</div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

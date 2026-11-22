@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs"
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { isAbsolute, dirname, relative, resolve, sep } from "node:path"
 
 const LOOPBACK = ["127.0.0.1", "::1", "localhost"]
 // Deployment and system locations never hold fixtures.
@@ -18,6 +18,23 @@ const SYSTEM = [
   "/sys",
 ]
 
+/** Validate even a not-yet-created fixture directory before any writes. */
+export function assertFixtureDirectory(path: string) {
+  const requested = resolve(path)
+  let parent = requested
+  while (!existsSync(parent)) parent = dirname(parent)
+  const canonical = resolve(realpathSync(parent), relative(parent, requested))
+  if (
+    SYSTEM.some(
+      (root) => canonical === root || canonical.startsWith(root + sep)
+    )
+  )
+    throw new Error(
+      "Fixture directory cannot be a system or deployment directory"
+    )
+  return canonical
+}
+
 export function assertLoopback(host: string) {
   if (!LOOPBACK.includes(host)) throw new Error("Bind to a loopback address")
 }
@@ -29,7 +46,8 @@ export function assertLoopback(host: string) {
  */
 export function fixturePaths(
   env: Record<string, string | undefined>,
-  fallbackDir: string
+  fallbackDir: string,
+  requireDetail = true
 ) {
   const requested = resolve(env.MONEY_FIXTURE_DIR || fallbackDir)
   if (!existsSync(requested))
@@ -63,7 +81,29 @@ export function fixturePaths(
   }
   return {
     dir,
-    detail: file(env.MONEY_FIXTURE_DETAIL || "detail.sqlite", true),
+    detail: file(env.MONEY_FIXTURE_DETAIL || "detail.sqlite", requireDetail),
     app: file(env.MONEY_FIXTURE_APP || "app.sqlite", false),
   }
+}
+
+const PRODUCTION_PATHS = ["/var/lib/money-detail/", "/var/lib/money-app/"]
+const isProduction = (path: string | undefined) => {
+  if (!path) return false
+  const absolute = resolve(path)
+  const canonical = existsSync(absolute) ? realpathSync(absolute) : absolute
+  return PRODUCTION_PATHS.some((root) => canonical.startsWith(root))
+}
+
+/**
+ * The real databases open only under NODE_ENV=production (the systemd unit),
+ * and production refuses anything else, so development or test tooling can
+ * never point at real data by accident.
+ */
+export function assertProductionPaths(env: Record<string, string | undefined>) {
+  const paths = [env.MONEY_DETAIL_DB, env.MONEY_APP_DB]
+  if (env.NODE_ENV === "production") {
+    if (!paths.every(isProduction))
+      throw new Error("Production uses only the production databases")
+  } else if (paths.some(isProduction))
+    throw new Error("Development and tests cannot open production databases")
 }

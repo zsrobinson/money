@@ -1,0 +1,2794 @@
+{
+ "about": "Shared app schema v4 evaluator vectors. Invented data. Each vector runs one transaction through rules (enabled, ordered by position then id), its txn_overrides row, its txn_splits rows and the category rows. expected.category is the effective category after a built-in merge; owned is the code used outside the app; allocations are signed cents (inflow positive) per category, in order. A rule with match_json/action_json strings uses them verbatim.",
+ "vectors": [
+  {
+   "name": "no rules keeps the snapshot category",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "merchant_starts_with is a normalized prefix of the merchant text",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "merchant_starts_with": "  INVENTED   grocer"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "merchant_starts_with does not match inside the text",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "merchant_starts_with": "grocer"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "merchant text falls back to the description",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": null,
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "merchant_starts_with": "pos invented"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "description_contains reads only the description",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "description_contains": "invented grocer #12"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "description_contains matches normalized description text",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "description_contains": "grocer 12 springfield"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "description_contains never matches a missing description",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": null,
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "description_contains": "invented"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "flow_kind equality",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "peer_payment",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "peer_payment"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "flow_kind": "activity"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "flow_kind": "peer_payment"
+     },
+     "action": {
+      "category": "fees"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "fees",
+    "owned": "fees",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "fees",
+      "owned": "fees",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "date_from and date_to are inclusive snapshot-date bounds",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "date_from": "2026-10-16"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "date_to": "2026-10-14"
+     },
+     "action": {
+      "category": "health"
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_c",
+     "position": 2,
+     "enabled": 1,
+     "match": {
+      "date_from": "2026-10-15",
+      "date_to": "2026-10-15"
+     },
+     "action": {
+      "category": "travel"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "travel",
+    "owned": "travel",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "travel",
+      "owned": "travel",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "date bounds read the snapshot date, not an override date",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "date_to": "2026-10-15"
+     },
+     "action": {
+      "category": "travel"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": {
+    "date": "2026-12-01"
+   },
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "travel",
+    "owned": "travel",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "travel",
+      "owned": "travel",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "any matches when one condition matches",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "any": [
+       {
+        "merchant_contains": "nothing like it"
+       },
+       {
+        "amount_min_cents": 1000,
+        "direction": "out"
+       }
+      ]
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "any combines with other keys by AND",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "account_id": "acct_other",
+      "any": [
+       {
+        "direction": "out"
+       }
+      ]
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "empty any matches nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "any": []
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "nested any makes the rule match nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "any": [
+       {
+        "direction": "out"
+       },
+       {
+        "any": [
+         {
+          "direction": "out"
+         }
+        ]
+       }
+      ]
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "an empty condition inside any matches nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "any": [
+       {}
+      ]
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "an unknown key inside any makes the rule match nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "any": [
+       {
+        "direction": "out"
+       },
+       {
+        "merchant_regex": ".*"
+       }
+      ]
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "an unknown match key makes the rule match nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out",
+      "merchant_regex": ".*"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "unknown action keys are ignored",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping",
+      "notify": "everyone",
+      "mark_recurring": true
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "an empty match object matches nothing",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {},
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "unparseable rule JSON is skipped",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": null,
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null,
+     "match_json": "{\"direction\":"
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "health"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "health",
+    "owned": "health",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "health",
+      "owned": "health",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "disabled rules never apply",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 0,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "rules order by position then id",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_z",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "travel"
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_c",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "health"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "health",
+    "owned": "health",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "health",
+      "owned": "health",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "applies_from skips older snapshot dates",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": "2026-10-16"
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "health"
+     },
+     "applies_from": "2026-10-15"
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "health",
+    "owned": "health",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "health",
+      "owned": "health",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "applies_from reads the snapshot date, not an override date",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping"
+     },
+     "applies_from": "2026-11-01"
+    }
+   ],
+   "override": {
+    "date": "2026-11-05"
+   },
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "split rounding truncates toward zero and the last part takes the remainder",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "food",
+        "percent": 3333
+       },
+       {
+        "category": "housing",
+        "percent": 3333
+       },
+       {
+        "category": "shopping",
+        "percent": 3334
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -333
+     },
+     {
+      "category": "housing",
+      "owned": "housing",
+      "amount_cents": -333
+     },
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -335
+     }
+    ]
+   }
+  },
+  {
+   "name": "split of an inflow keeps the sign",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": 500,
+    "category": "income",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "in"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "income",
+        "percent": 3333
+       },
+       {
+        "category": "other",
+        "percent": 6667
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "income",
+    "owned": "income",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "income",
+      "owned": "income",
+      "amount_cents": 166
+     },
+     {
+      "category": "other",
+      "owned": "other",
+      "amount_cents": 334
+     }
+    ]
+   }
+  },
+  {
+   "name": "zero split parts are dropped",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -10,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 500
+       },
+       {
+        "category": "housing",
+        "percent": 9000
+       },
+       {
+        "category": "shopping",
+        "percent": 500
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "housing",
+      "owned": "housing",
+      "amount_cents": -9
+     },
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1
+     }
+    ]
+   }
+  },
+  {
+   "name": "fewer than two non-zero parts take the first non-zero part category",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "shopping",
+        "percent": 5000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1
+     }
+    ]
+   }
+  },
+  {
+   "name": "a zero amount keeps the single category",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": 0,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "amount_max_cents": 0
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "shopping",
+        "percent": 5000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "explicit splits win over a rule split",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "shopping",
+        "percent": 5000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [
+    {
+     "amount_cents": -1000,
+     "category": "health"
+    },
+    {
+     "amount_cents": -1,
+     "category": "fees"
+    }
+   ],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "health",
+      "owned": "health",
+      "amount_cents": -1000
+     },
+     {
+      "category": "fees",
+      "owned": "fees",
+      "amount_cents": -1
+     }
+    ]
+   }
+  },
+  {
+   "name": "the first matching rule with a split wins; later rules still set other fields",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "food",
+        "percent": 5000
+       },
+       {
+        "category": "shopping",
+        "percent": 5000
+       }
+      ]
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "health",
+        "percent": 5000
+       }
+      ],
+      "category": "travel",
+      "hide": true
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "travel",
+    "owned": "travel",
+    "hidden": true,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -500
+     },
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -501
+     }
+    ]
+   }
+  },
+  {
+   "name": "an invalid split skips the whole rule",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping",
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "health",
+        "percent": 4000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a single-part split is invalid",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "shopping",
+      "split": [
+       {
+        "category": "travel",
+        "percent": 10000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "first matching rule wins per field and overrides win last",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "merchant_contains": "invented grocer"
+     },
+     "action": {
+      "category": "shopping",
+      "hide": true
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "category": "food"
+     },
+     "action": {
+      "category": "housing"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": {
+    "category": "travel",
+    "hidden": 0
+   },
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "travel",
+    "owned": "travel",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "travel",
+      "owned": "travel",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "override hidden hides the transaction",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "hidden": 1
+   },
+   "splits": [],
+   "categories": [],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": true,
+    "allocations": [
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a merged snapshot category becomes its target, but rules still match the snapshot code",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "travel",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "category": "travel"
+     },
+     "action": {
+      "hide": true
+     },
+     "applies_from": null
+    },
+    {
+     "id": "rule_b",
+     "position": 1,
+     "enabled": 1,
+     "match": {
+      "category": "entertainment"
+     },
+     "action": {
+      "category": "health"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    },
+    {
+     "code": "fees",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "shopping"
+    }
+   ],
+   "expected": {
+    "category": "entertainment",
+    "owned": "entertainment",
+    "hidden": true,
+    "allocations": [
+     {
+      "category": "entertainment",
+      "owned": "entertainment",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a merged rule or override result becomes its target",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "category": "fees"
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    },
+    {
+     "code": "fees",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "shopping"
+    }
+   ],
+   "expected": {
+    "category": "shopping",
+    "owned": "shopping",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "shopping",
+      "owned": "shopping",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a merge is one step only",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "travel",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": null,
+   "splits": [],
+   "categories": [
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    },
+    {
+     "code": "entertainment",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "health"
+    }
+   ],
+   "expected": {
+    "category": "entertainment",
+    "owned": "entertainment",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "entertainment",
+      "owned": "entertainment",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "merged split categories follow the target",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [
+    {
+     "id": "rule_a",
+     "position": 0,
+     "enabled": 1,
+     "match": {
+      "direction": "out"
+     },
+     "action": {
+      "split": [
+       {
+        "category": "travel",
+        "percent": 5000
+       },
+       {
+        "category": "food",
+        "percent": 5000
+       }
+      ]
+     },
+     "applies_from": null
+    }
+   ],
+   "override": null,
+   "splits": [],
+   "categories": [
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    },
+    {
+     "code": "fees",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "shopping"
+    }
+   ],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "entertainment",
+      "owned": "entertainment",
+      "amount_cents": -500
+     },
+     {
+      "category": "food",
+      "owned": "food",
+      "amount_cents": -501
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom child maps to its built-in parent",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_a1"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_a1",
+    "owned": "housing",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_a1",
+      "owned": "housing",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom top-level expense maps to other",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_b2"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_b2",
+    "owned": "other",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_b2",
+      "owned": "other",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom top-level income maps to income",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_c3"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_c3",
+    "owned": "income",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_c3",
+      "owned": "income",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a child of a custom top-level row takes that row group",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_d4"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_d4",
+    "owned": "income",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_d4",
+      "owned": "income",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom top-level transfer maps to bank_transfer",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_e5"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_e5",
+    "owned": "bank_transfer",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_e5",
+      "owned": "bank_transfer",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom row whose parent no longer exists is ignored and counts as other",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_f6"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_f6",
+    "owned": "other",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_f6",
+      "owned": "other",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom row under a child row is ignored and counts as other",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_g7"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_g7",
+    "owned": "other",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_g7",
+      "owned": "other",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "an unknown code counts as other",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_unknown"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_unknown",
+    "owned": "other",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_unknown",
+      "owned": "other",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "a custom child of a merged built-in maps to the merge target",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": {
+    "category": "cat_h8"
+   },
+   "splits": [],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "cat_h8",
+    "owned": "entertainment",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_h8",
+      "owned": "entertainment",
+      "amount_cents": -1001
+     }
+    ]
+   }
+  },
+  {
+   "name": "custom split categories map to owned codes",
+   "txn": {
+    "account_id": "acct_fixture_a",
+    "date": "2026-10-15",
+    "amount_cents": -1001,
+    "category": "food",
+    "merchant": "Invented Grocer #12",
+    "description": "POS INVENTED GROCER 12 SPRINGFIELD",
+    "flow_kind": "activity"
+   },
+   "rules": [],
+   "override": null,
+   "splits": [
+    {
+     "amount_cents": -600,
+     "category": "cat_b2"
+    },
+    {
+     "amount_cents": -401,
+     "category": "cat_a1"
+    }
+   ],
+   "categories": [
+    {
+     "code": "cat_a1",
+     "grp": "expense",
+     "parent": "housing",
+     "merged_into": null
+    },
+    {
+     "code": "cat_b2",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_c3",
+     "grp": "income",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_d4",
+     "grp": "income",
+     "parent": "cat_c3",
+     "merged_into": null
+    },
+    {
+     "code": "cat_e5",
+     "grp": "transfer",
+     "parent": null,
+     "merged_into": null
+    },
+    {
+     "code": "cat_f6",
+     "grp": "expense",
+     "parent": "cat_gone",
+     "merged_into": null
+    },
+    {
+     "code": "cat_g7",
+     "grp": "expense",
+     "parent": "cat_d4",
+     "merged_into": null
+    },
+    {
+     "code": "cat_h8",
+     "grp": "expense",
+     "parent": "travel",
+     "merged_into": null
+    },
+    {
+     "code": "travel",
+     "grp": "expense",
+     "parent": null,
+     "merged_into": "entertainment"
+    }
+   ],
+   "expected": {
+    "category": "food",
+    "owned": "food",
+    "hidden": false,
+    "allocations": [
+     {
+      "category": "cat_b2",
+      "owned": "other",
+      "amount_cents": -600
+     },
+     {
+      "category": "cat_a1",
+      "owned": "housing",
+      "amount_cents": -401
+     }
+    ]
+   }
+  }
+ ]
+}
