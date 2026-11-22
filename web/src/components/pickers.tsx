@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { cn } from "@zsrobinson/shell"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { Calendar } from "@zsrobinson/shell/ui/calendar"
@@ -19,6 +20,7 @@ import {
 } from "@zsrobinson/shell/ui/select"
 import { CalendarIcon, XIcon } from "lucide-react"
 import { fullDate } from "@/lib/format"
+import { metaQuery } from "@/lib/queries"
 
 export type ChoiceOption = {
   value: string
@@ -146,6 +148,9 @@ export function DatePicker({
 }) {
   const [open, setOpen] = useState(false)
   const selected = value ? fromIso(value) : undefined
+  // Weeks start on the day chosen in Settings.
+  const weekStartsOn =
+    useQuery(metaQuery).data?.settings.weekStartsOn === "sunday" ? 0 : 1
   return (
     <div className={cn("flex items-center gap-1", className)}>
       <Popover open={open} onOpenChange={setOpen}>
@@ -174,6 +179,7 @@ export function DatePicker({
             selected={selected}
             defaultMonth={selected}
             captionLayout="dropdown"
+            weekStartsOn={weekStartsOn}
             onSelect={(d) => {
               onChange(d ? iso(d) : "")
               setOpen(false)

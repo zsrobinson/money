@@ -27,6 +27,7 @@ import {
   StatRow,
 } from "@/components/money"
 import { ReportNav } from "@/components/report-nav"
+import { useCategories } from "@/components/category-style"
 import { usePageTitle } from "@/lib/crumb"
 import {
   epochMonthYear,
@@ -50,6 +51,7 @@ export const Route = createFileRoute("/reports/")({
 })
 
 function CategoryReport() {
+  const cats = useCategories()
   usePageTitle("Spending by category")
   const { range = "6m" } = Route.useSearch()
   const navigate = useNavigate({ from: "/reports/" })
@@ -107,6 +109,7 @@ function CategoryReport() {
                   key: r.code,
                   label: r.label,
                   value: r.cents,
+                  color: cats.color(r.code),
                 }))}
                 onSelect={(code) =>
                   void navigate({
