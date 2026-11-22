@@ -503,15 +503,18 @@ export type CashFlowPeriod = {
   next: string | null
 }
 export type SankeyData = {
-  nodes: { id: string; label: string; color: string | null; column: number }[]
+  nodes: { id: string; label: string; color: string | null }[]
   links: { source: string; target: string; value: number }[]
   incomeCents: number
+  refundsCents: number
   spendingCents: number
+  savedCents: number
 }
 export type CashFlow = {
   months: MonthFlow[]
   period: CashFlowPeriod
   by: "category" | "group" | "merchant"
+  incomeBy: "category" | "group" | "merchant"
   incomeCents: number
   spendingCents: number
   netCents: number

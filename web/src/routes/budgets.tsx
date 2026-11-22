@@ -190,7 +190,25 @@ function BudgetsPage() {
           {d.mode === "flex" ? <FlexCards d={d} /> : <CategoryCards d={d} />}
           <GoalsCard d={d} />
           {history.data ? (
-            <SectionCard title="Budget and spending by month">
+            <SectionCard
+              title="Budget and spending by month"
+              footer={
+                <span className="mr-auto text-sm text-muted-foreground">
+                  Spent in budgets, last 12 months{" "}
+                  <span className="font-medium text-foreground tabular-nums">
+                    {whole(
+                      history.data.months.reduce((t, m) => t + m.spentCents, 0)
+                    )}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-medium text-foreground tabular-nums">
+                    {whole(
+                      history.data.months.reduce((t, m) => t + m.budgetCents, 0)
+                    )}
+                  </span>
+                </span>
+              }
+            >
               <TrendChart
                 kind="bar"
                 label="Total budget and spending in budgeted categories by month"
@@ -201,11 +219,17 @@ function BudgetsPage() {
                 }))}
                 config={{
                   budget: { label: "Budget", color: "var(--chart-neutral)" },
-                  spent: { label: "Spent", color: "var(--chart-1)" },
+                  spent: { label: "Spent in budgets", color: "var(--chart-1)" },
                 }}
                 format={dollars}
                 formatTick={moneyTick}
-                formatTime={epochMonthYear}
+                formatTime={(t) =>
+                  t === monthEpoch(d.current)
+                    ? `${epochMonthYear(t)} so far`
+                    : epochMonthYear(t)
+                }
+                formatTimeTick={epochMonthYear}
+                markers={[{ time: monthEpoch(d.current), label: "So far" }]}
                 className="h-56"
               />
             </SectionCard>
@@ -287,14 +311,18 @@ function BudgetSection({
   title,
   action,
   spentLabel = "Spent",
+  progressLabel = "Progress",
   children,
   empty,
+  footer,
 }: {
   title: ReactNode
   action?: ReactNode
   spentLabel?: string
+  progressLabel?: string
   children: ReactNode
   empty?: ReactNode
+  footer?: ReactNode
 }) {
   return (
     <Card className="gap-0 py-0">
@@ -306,7 +334,7 @@ function BudgetSection({
         className={`${GRID} border-b px-5 py-1.5 text-xs text-muted-foreground`}
       >
         <span>Category</span>
-        <span className="hidden sm:block">Progress</span>
+        <span className="hidden sm:block">{progressLabel}</span>
         <span className="hidden text-right sm:block">{spentLabel}</span>
         <span className="text-right">Budget</span>
         <span />
@@ -314,6 +342,13 @@ function BudgetSection({
       {empty ?? (
         <ul className="flex flex-col divide-y divide-border/70">{children}</ul>
       )}
+      {footer ? (
+        <div
+          className={`${GRID} border-t bg-muted/40 px-5 py-2.5 text-sm font-medium`}
+        >
+          {footer}
+        </div>
+      ) : null}
     </Card>
   )
 }
@@ -341,6 +376,24 @@ function CategoryCards({ d }: { d: Budgets }) {
     <>
       <BudgetSection
         title="Spending"
+        footer={
+          budgeted.length ? (
+            <>
+              <span>Total</span>
+              <span className="hidden sm:block" />
+              <span className="hidden text-right tabular-nums sm:block">
+                {whole(d.totals.spentCents)}
+              </span>
+              <span className="text-right tabular-nums max-sm:col-span-2">
+                <span className="sm:hidden">
+                  {whole(d.totals.spentCents)} of{" "}
+                </span>
+                {whole(d.totals.budgetedCents)}
+              </span>
+              <span className="hidden sm:block" />
+            </>
+          ) : undefined
+        }
         empty={
           budgeted.length ? undefined : (
             <p className="px-5 py-4 text-sm text-muted-foreground">
@@ -359,7 +412,11 @@ function CategoryCards({ d }: { d: Budgets }) {
         ))}
       </BudgetSection>
       {other.length ? (
-        <BudgetSection title="Not budgeted" spentLabel="Spent">
+        <BudgetSection
+          title="Not budgeted"
+          spentLabel="Spent"
+          progressLabel="Average (3 months)"
+        >
           {tree(d.expenses, other).map(({ row, rest }) => (
             <BudgetLine
               key={`${d.month}-${row.code}-${rest ? "rest" : "row"}-${row.budgetCents}`}
@@ -614,7 +671,13 @@ function BudgetLine({
           {flexible ? (
             "In the flexible budget"
           ) : !budgeted ? (
-            `${whole(r.averageCents)} average`
+            r.averageCents < 0 ? (
+              <span className="text-positive">
+                {whole(-r.averageCents)} back on average
+              </span>
+            ) : (
+              `${whole(r.averageCents)} average`
+            )
           ) : income ? (
             spent >= available ? (
               <span className="text-positive">

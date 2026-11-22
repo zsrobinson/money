@@ -471,7 +471,7 @@ export function BudgetBar({
     >
       <div className="flex h-full w-full overflow-hidden rounded-full">
         <div
-          className={cn("h-full", ahead ? "bg-warning" : "bg-primary")}
+          className="h-full bg-primary"
           style={{ width: `${within * 100}%` }}
         />
         {over > 0 ? (
@@ -484,7 +484,10 @@ export function BudgetBar({
       {elapsed !== undefined && elapsed > 0 && elapsed < 1 && budget > 0 ? (
         <div
           aria-hidden
-          className="absolute -top-0.5 h-2.5 w-0.5 rounded-full bg-foreground/60"
+          className={cn(
+            "absolute -top-0.5 h-2.5 w-0.5 rounded-full",
+            ahead ? "bg-warning" : "bg-foreground/60"
+          )}
           style={{ left: `calc(${(budget * elapsed) / scale} * 100% - 1px)` }}
         />
       ) : null}

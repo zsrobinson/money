@@ -36,7 +36,6 @@ import {
 } from "@/components/money"
 import { usePageTitle } from "@/lib/crumb"
 import {
-  epochMonthYear,
   moneyTick,
   money,
   monthEpoch,
@@ -45,7 +44,7 @@ import {
   percent,
 } from "@/lib/format"
 import { cashflowQuery } from "@/lib/queries"
-import type { CashFlow, CashFlowPeriod, CashFlowRow } from "@/lib/types"
+import type { CashFlowPeriod, CashFlowRow, MonthFlow } from "@/lib/types"
 
 export const Route = createFileRoute("/cash-flow")({
   validateSearch: z.object({
@@ -74,8 +73,10 @@ function CashFlowPage() {
   usePageTitle("Cash flow")
   const s = Route.useSearch()
   const navigate = useNavigate({ from: "/cash-flow" })
-  const months = s.months ?? 12
   const kind = s.period ?? "month"
+  // Quarters show two years; years show three.
+  const months =
+    kind === "quarter" ? 24 : kind === "year" ? 36 : (s.months ?? 12)
   const by = s.by ?? "category"
   const q = useQuery(
     cashflowQuery({
@@ -92,12 +93,13 @@ function CashFlowPage() {
       replace: true,
       resetScroll: false,
     })
-  const full = d ? d.months.slice(0, -1) : []
+  const rows = d ? periodRows(d.months, kind) : []
+  const full = rows.filter((r) => !r.partial)
   const avg = (key: "incomeCents" | "spendingCents") =>
     full.length
       ? Math.round(full.reduce((sum, f) => sum + f[key], 0) / full.length)
       : 0
-  const current = d?.months.at(-1)?.month ?? ""
+  const unit = kind === "month" ? "month" : kind
   const p = d?.period
   const mobile = useIsMobile()
   return (
@@ -160,8 +162,8 @@ function CashFlowPage() {
               <Stat label="Spending">
                 <Amount cents={d.spendingCents} tone="plain" whole />
               </Stat>
-              <Stat label={d.netCents >= 0 ? "Saved" : "Overspent"}>
-                <Amount cents={Math.abs(d.netCents)} tone="plain" whole />
+              <Stat label="Saved">
+                <Amount cents={d.netCents} tone="signed" whole />
               </Stat>
               <Stat label="Savings rate">
                 {d.incomeCents > 0 ? percent(d.netCents / d.incomeCents) : "—"}
@@ -169,48 +171,50 @@ function CashFlowPage() {
             </StatRow>
           </Card>
           <SectionCard
-            title="Income and spending by month"
+            title={`Income and spending by ${unit}`}
             action={
-              <Choice
-                aria-label="Months shown"
-                size="sm"
-                align="end"
-                className="w-36"
-                value={String(months)}
-                onChange={(v) => set({ months: Number(v) })}
-                options={[
-                  { value: "6", label: "6 months" },
-                  { value: "12", label: "12 months" },
-                  { value: "24", label: "24 months" },
-                ]}
-              />
+              kind !== "month" ? undefined : (
+                <Choice
+                  aria-label="Months shown"
+                  size="sm"
+                  align="end"
+                  className="w-36"
+                  value={String(months)}
+                  onChange={(v) => set({ months: Number(v) })}
+                  options={[
+                    { value: "6", label: "6 months" },
+                    { value: "12", label: "12 months" },
+                    { value: "24", label: "24 months" },
+                  ]}
+                />
+              )
             }
             footer={
               <div className="flex w-full flex-wrap justify-between gap-x-6 gap-y-1 text-sm text-muted-foreground">
                 <span>
-                  Avg income / month{" "}
+                  Avg income / {unit}{" "}
                   <span className="font-medium text-foreground tabular-nums">
                     {cents(avg("incomeCents"))}
                   </span>
                 </span>
                 <span>
-                  Avg spending / month{" "}
+                  Avg spending / {unit}{" "}
                   <span className="font-medium text-foreground tabular-nums">
                     {cents(avg("spendingCents"))}
                   </span>
                 </span>
-                <span>Full months only</span>
+                <span>Full {unit}s only</span>
               </div>
             }
           >
             <TrendChart
               kind="bar"
               stacked
-              label="Income and spending by month"
-              data={d.months.map((f) => ({
-                time: monthEpoch(f.month),
-                income: f.incomeCents / 100,
-                spending: -f.spendingCents / 100,
+              label={`Income and spending by ${unit}`}
+              data={rows.map((r) => ({
+                time: r.time,
+                income: r.incomeCents / 100,
+                spending: -r.spendingCents / 100,
               }))}
               config={{
                 income: { label: "Income", color: "var(--chart-positive)" },
@@ -218,21 +222,22 @@ function CashFlowPage() {
               }}
               format={whole}
               formatTick={moneyTick}
-              formatTime={(t) =>
-                t === monthEpoch(current)
-                  ? `${epochMonthYear(t)} so far`
-                  : epochMonthYear(t)
+              formatTime={(t) => {
+                const r = rows.find((x) => x.time === t)
+                return r ? `${r.label}${r.partial ? " so far" : ""}` : ""
+              }}
+              formatTimeTick={(t) =>
+                rows.find((x) => x.time === t)?.label ?? ""
               }
-              formatTimeTick={epochMonthYear}
-              markers={[{ time: monthEpoch(current), label: "So far" }]}
-              // Click a month's bars to see it below.
-              selected={p.kind === "month" ? monthEpoch(p.key) : undefined}
-              onSelect={(t) =>
-                set({
-                  period: undefined,
-                  key: new Date(t).toISOString().slice(0, 7),
-                })
-              }
+              markers={rows
+                .filter((r) => r.partial)
+                .map((r) => ({ time: r.time, label: "So far" }))}
+              // Click a period's bars to see it below.
+              selected={rows.find((r) => r.key === p.key)?.time}
+              onSelect={(t) => {
+                const r = rows.find((x) => x.time === t)
+                if (r) set({ key: r.key })
+              }}
               className="h-64"
             />
           </SectionCard>
@@ -242,7 +247,7 @@ function CashFlowPage() {
             // A phone keeps two columns, income to where it went, so the
             // chart fits without scrolling sideways.
             nodes={d.sankey.nodes
-              .filter((n) => !mobile || !/^(in|back):/.test(n.id))
+              .filter((n) => !mobile || !n.id.startsWith("in:"))
               .map((n) => ({
                 id: n.id,
                 label: n.label,
@@ -254,13 +259,37 @@ function CashFlowPage() {
                       : undefined,
               }))}
             links={d.sankey.links.filter(
-              (l) => !mobile || !/^(in|back):/.test(l.source)
+              (l) => !mobile || !l.source.startsWith("in:")
             )}
             formatValue={(v) => cents(v)}
+            compact={mobile}
+            footer={
+              <span className="text-muted-foreground">
+                {d.sankey.savedCents >= 0 ? (
+                  <>
+                    Saved{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {cents(d.sankey.savedCents)}
+                    </span>
+                    {d.incomeCents > 0
+                      ? ` · ${percent(d.netCents / d.incomeCents)} of income`
+                      : ""}
+                  </>
+                ) : (
+                  <>
+                    Spent{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {cents(-d.sankey.savedCents)}
+                    </span>{" "}
+                    more than came in
+                  </>
+                )}
+              </span>
+            }
           />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-heading text-base font-medium">
-              By {by === "group" ? "group" : by}
+              By {by === "merchant" ? "merchant" : "category"}
             </h2>
             <Segmented
               label="Break down by"
@@ -268,7 +297,6 @@ function CashFlowPage() {
               onChange={(v) => set({ by: v === "category" ? undefined : v })}
               options={[
                 { value: "category", label: "Category" },
-                { value: "group", label: "Group" },
                 { value: "merchant", label: "Merchant" },
               ]}
             />
@@ -276,20 +304,22 @@ function CashFlowPage() {
           <PageGrid layout="two">
             <Breakdown
               title="Spending"
-              d={d}
+              by={d.by}
               rows={d.spending}
               total={d.spendingCents}
             />
             <Breakdown
-              title="Income"
-              d={d}
+              title={d.incomeBy === "merchant" ? "Income by source" : "Income"}
+              by={d.incomeBy}
               rows={d.income}
               total={d.incomeCents}
             />
           </PageGrid>
-          <MonthTable
-            d={d}
-            onPick={(month) => set({ period: undefined, key: month })}
+          <PeriodTable
+            rows={rows}
+            unit={unit}
+            selected={p.key}
+            onPick={(key) => set({ key })}
           />
         </PageStack>
       )}
@@ -297,33 +327,97 @@ function CashFlowPage() {
   )
 }
 
-function MonthTable({
-  d,
+type PeriodRow = {
+  key: string
+  time: number
+  label: string
+  incomeCents: number
+  spendingCents: number
+  netCents: number
+  /** Still in progress. */
+  partial: boolean
+}
+
+/** Months, or the quarters or years they make up, oldest first. */
+function periodRows(months: MonthFlow[], kind: string): PeriodRow[] {
+  const keyOf = (m: string) =>
+    kind === "quarter"
+      ? `${m.slice(0, 4)}-Q${Math.floor((Number(m.slice(5, 7)) - 1) / 3) + 1}`
+      : kind === "year"
+        ? m.slice(0, 4)
+        : m
+  const out = new Map<string, PeriodRow>()
+  months.forEach((f, i) => {
+    const key = keyOf(f.month)
+    const r = out.get(key) ?? {
+      key,
+      time: monthEpoch(f.month),
+      label:
+        kind === "quarter"
+          ? `${key.slice(5)} ’${key.slice(2, 4)}`
+          : kind === "year"
+            ? key
+            : monthShortYear(f.month),
+      incomeCents: 0,
+      spendingCents: 0,
+      netCents: 0,
+      partial: false,
+    }
+    r.incomeCents += f.incomeCents
+    r.spendingCents += f.spendingCents
+    r.netCents += f.netCents
+    // The last month is in progress, and so is the period holding it.
+    if (i === months.length - 1) r.partial = true
+    out.set(key, r)
+  })
+  // A period cut off at the start of the history is not a full one either.
+  const first = [...out.values()][0]
+  if (first && kind !== "month" && keyOf(months[0].month) === first.key) {
+    const startsAt =
+      kind === "year" ? `${first.key}-01` : months[0].month.slice(0, 7)
+    if (kind === "year" && months[0].month !== startsAt) first.partial = true
+    if (
+      kind === "quarter" &&
+      (Number(months[0].month.slice(5, 7)) - 1) % 3 !== 0
+    )
+      first.partial = true
+  }
+  return [...out.values()]
+}
+
+function PeriodTable({
+  rows,
+  unit,
+  selected,
   onPick,
 }: {
-  d: CashFlow
-  onPick: (month: string) => void
+  rows: PeriodRow[]
+  unit: string
+  selected: string
+  onPick: (key: string) => void
 }) {
   return (
     <Card className="gap-0 overflow-x-auto py-0">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="pl-5">Month</TableHead>
+            <TableHead className="pl-5">
+              {unit.charAt(0).toUpperCase() + unit.slice(1)}
+            </TableHead>
             <TableHead className="text-right">Income</TableHead>
             <TableHead className="text-right">Spending</TableHead>
             <TableHead className="pr-5 text-right">Saved</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {d.months.toReversed().map((f) => {
-            const chosen = d.period.kind === "month" && f.month === d.period.key
+          {rows.toReversed().map((r) => {
+            const chosen = r.key === selected
             return (
               <TableRow
-                key={f.month}
+                key={r.key}
                 data-state={chosen ? "selected" : undefined}
                 className="cursor-pointer data-[state=selected]:font-medium data-[state=selected]:[&>td:first-child]:shadow-[inset_3px_0_0_var(--primary)]"
-                onClick={() => onPick(f.month)}
+                onClick={() => onPick(r.key)}
               >
                 <TableCell className="pl-5">
                   <button
@@ -331,17 +425,20 @@ function MonthTable({
                     aria-pressed={chosen}
                     className="text-left underline-offset-4 outline-none hover:underline focus-visible:underline"
                   >
-                    {monthShortYear(f.month)}
+                    {r.label}
+                    {r.partial ? (
+                      <span className="text-muted-foreground"> so far</span>
+                    ) : null}
                   </button>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Amount cents={f.incomeCents} tone="plain" whole />
+                  <Amount cents={r.incomeCents} tone="plain" whole />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Amount cents={f.spendingCents} tone="plain" whole />
+                  <Amount cents={r.spendingCents} tone="plain" whole />
                 </TableCell>
                 <TableCell className="pr-5 text-right">
-                  <Amount cents={f.netCents} tone="signed" whole />
+                  <Amount cents={r.netCents} tone="signed" whole />
                 </TableCell>
               </TableRow>
             )
@@ -355,12 +452,12 @@ function MonthTable({
 /** Shares of the period: parents include the categories inside them, which sit indented below. */
 function Breakdown({
   title,
-  d,
+  by,
   rows,
   total,
 }: {
   title: string
-  d: CashFlow
+  by: string
   rows: CashFlowRow[]
   total: number
 }) {
@@ -369,7 +466,7 @@ function Breakdown({
     r,
     ...rows.filter((x) => x.parent === r.key),
   ])
-  const shown = d.by === "merchant" ? ordered.slice(0, 12) : ordered
+  const shown = by === "merchant" ? ordered.slice(0, 12) : ordered
   const scale = Math.max(1, ...tops.map((r) => r.cents))
   return (
     <SectionCard
@@ -378,7 +475,7 @@ function Breakdown({
         <span className="text-sm font-medium tabular-nums">{cents(total)}</span>
       }
       footer={
-        d.by === "merchant" && ordered.length > shown.length ? (
+        by === "merchant" && ordered.length > shown.length ? (
           <span className="mr-auto text-sm text-muted-foreground">
             And {ordered.length - shown.length} more
           </span>
@@ -391,11 +488,11 @@ function Breakdown({
             <li key={r.key} className={r.parent ? "pl-4" : undefined}>
               <Link
                 to={
-                  d.by === "merchant"
+                  by === "merchant"
                     ? "/reports/merchants/$key"
                     : "/reports/categories/$code"
                 }
-                params={d.by === "merchant" ? { key: r.key } : { code: r.key }}
+                params={by === "merchant" ? { key: r.key } : { code: r.key }}
                 className="flex flex-col gap-1.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex justify-between gap-3 text-sm">
@@ -417,7 +514,7 @@ function Breakdown({
                     style={{
                       width: `${(Math.max(0, r.cents) / scale) * 100}%`,
                       backgroundColor:
-                        d.by === "merchant"
+                        by === "merchant"
                           ? "var(--chart-1)"
                           : categoryColor(r.color),
                       opacity: r.parent ? 0.7 : 1,
