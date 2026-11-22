@@ -17,11 +17,7 @@ import {
   Unavailable,
 } from "@zsrobinson/shell/blocks/detail-list"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@zsrobinson/shell/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@zsrobinson/shell/ui/alert"
 import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import {

@@ -504,6 +504,9 @@ test("cash flow: periods, breakdowns and a balanced Sankey", async () => {
         .filter((l: { source: string }) => l.source === id)
         .reduce((a: number, l: { value: number }) => a + l.value, 0)
     assert.equal(into("income"), out("income"))
+    // Saved in the chart is the period's income less spending.
+    const saved = s.links.find((l: { target: string }) => l.target === "saved")
+    if (q.netCents > 0) assert.equal(saved.value, q.netCents)
   }
 })
 

@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
 const repository = "https://github.com/zsrobinson/shell.git"
-const sha = execFileSync("git", ["ls-remote", repository, "refs/heads/main"], {
-  encoding: "utf8",
-}).split(/\s/)[0]
+// Pin shell main, or a given full commit (a reviewed branch before it merges).
+const wanted = process.argv[2]
+const sha = /^[a-f0-9]{40}$/.test(wanted ?? "")
+  ? wanted
+  : execFileSync("git", ["ls-remote", repository, "refs/heads/main"], {
+      encoding: "utf8",
+    }).split(/\s/)[0]
 if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Could not resolve shell main")
 // Preserve HTTPS so public Docker builds need no SSH credentials.
 const file = new URL("../package.json", import.meta.url)

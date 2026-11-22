@@ -163,7 +163,13 @@ function sankey(m: Computed, from: string, to: string) {
         ]
   const ins = fold(pos(sources), 5)
   const outs = fold(pos(groups), 8)
-  const income = ins.reduce((s, x) => s + x[1], 0)
+  // A group where more came back than went out (friends paying you back)
+  // flows in, so Saved matches income less spending.
+  const back = [...groups]
+    .filter(([, v]) => v.cents < 0)
+    .map(([k, v]) => [k, -v.cents] as const)
+  const income =
+    ins.reduce((s, x) => s + x[1], 0) + back.reduce((s, x) => s + x[1], 0)
   const spending = outs.reduce((s, x) => s + x[1], 0)
   const nodes: {
     id: string
@@ -181,6 +187,11 @@ function sankey(m: Computed, from: string, to: string) {
     })
     links.push({ source: `in:${k}`, target: "income", value: v })
   }
+  for (const [k, v] of back) {
+    const c = m.category(k)
+    nodes.push({ id: `back:${k}`, label: c.label, color: c.color, column: 0 })
+    links.push({ source: `back:${k}`, target: "income", value: v })
+  }
   if (spending > income) {
     nodes.push({
       id: "in:savings",
@@ -194,7 +205,12 @@ function sankey(m: Computed, from: string, to: string) {
       value: spending - income,
     })
   }
-  nodes.push({ id: "income", label: "Income", color: "green", column: 1 })
+  nodes.push({
+    id: "income",
+    label: spending > income ? "Income and savings" : "Income",
+    color: "green",
+    column: 1,
+  })
   for (const [k, v] of outs) {
     const c = k === "other" ? null : m.category(k)
     nodes.push({
