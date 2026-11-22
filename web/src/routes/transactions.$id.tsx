@@ -52,7 +52,7 @@ import {
 } from "lucide-react"
 import { z } from "zod"
 import { CategoryPicker } from "@/components/category-picker"
-import { CategoryDot, useCategories } from "@/components/category-style"
+
 import { TagEditor } from "@/components/tag-editor"
 import {
   Amount,
@@ -65,6 +65,7 @@ import { DatePicker } from "@/components/pickers"
 import { describeRule } from "@/components/rules"
 import {
   CategorySelect,
+  CompactTxnList,
   TxnRows,
   txnName,
   useCategoryLabels,
@@ -170,7 +171,6 @@ function useQueue(t: TxnDetail) {
 function TransactionView({ t }: { t: TxnDetail }) {
   const categories = useQuery(categoriesQuery)
   const label = useCategoryLabels()
-  const cats = useCategories()
   const navigate = useNavigate()
   const { list, n } = useQueue(t)
   const go = (id: string | null | undefined) =>
@@ -309,7 +309,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
           ) : null}
         </div>
       ) : null}
-      <PageHeader>
+      <PageHeader className="max-sm:flex-nowrap max-sm:items-start">
         <div className="flex min-w-0 items-center gap-3">
           <MerchantMark
             name={txnName(t)}
@@ -333,7 +333,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
                 <Badge variant="outline">Reviewed</Badge>
               ) : t.needsReview ? (
                 <Badge variant="outline" className="gap-1.5">
-                  <span className="size-1.5 rounded-full bg-primary" />
+                  <span className="size-2 rounded-full border-[1.5px] border-primary" />
                   Needs review
                 </Badge>
               ) : null}
@@ -804,32 +804,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
             </CardLink>
           }
         >
-          <ul className="flex flex-col divide-y divide-border/70">
-            {t.similar.map((x) => (
-              <li key={x.id}>
-                <Link
-                  to="/transactions/$id"
-                  params={{ id: x.id }}
-                  className="grid min-h-11 grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2 text-sm outline-none hover:bg-muted/60 focus-visible:bg-muted"
-                >
-                  <span className="text-muted-foreground tabular-nums">
-                    {shortDate(x.date)}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                    <CategoryDot color={cats.get(x.category)?.color} />
-                    <span className="truncate">
-                      {x.split ? "Split" : label(x.category)}
-                    </span>
-                  </span>
-                  <Amount
-                    cents={x.amountCents}
-                    currency={x.currency}
-                    className="text-right font-medium"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <CompactTxnList items={t.similar} />
         </SectionCard>
       ) : null}
     </Page>

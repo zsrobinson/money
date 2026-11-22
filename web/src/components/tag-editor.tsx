@@ -102,9 +102,6 @@ export function TagEditor({
           </Link>
         </span>
       )}
-      {!applied.length && tags.length ? (
-        <span className="text-sm text-muted-foreground">None</span>
-      ) : null}
     </div>
   )
 }

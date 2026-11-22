@@ -188,9 +188,11 @@ function sankey(m: Computed, from: string, to: string) {
   const outs = fold(pos(groups), 7)
   // Groups where more came back than went out (friends paying you back)
   // flow in as refunds, so Saved is exactly income less spending.
-  const refunds = [...groups]
-    .filter(([, v]) => v.cents < 0)
-    .reduce((s, [, v]) => s - v.cents, 0)
+  const back = [...groups].filter(([, v]) => v.cents < 0)
+  const refunds = back.reduce((s, [, v]) => s - v.cents, 0)
+  // Named after the category when one, so it matches the Spending list.
+  const refundLabel =
+    back.length === 1 ? `${m.category(back[0][0]).label} back` : "Refunds"
   const earned = ins.kept.reduce((s, x) => s + x[1], 0)
   const income = earned + refunds
   const spending = outs.kept.reduce((s, x) => s + x[1], 0)
@@ -202,7 +204,7 @@ function sankey(m: Computed, from: string, to: string) {
   const hub = overspent
     ? "Spending"
     : refunds > 0
-      ? "Income and refunds"
+      ? "Income and money back"
       : "Income"
   for (const [k, v] of ins.kept) {
     nodes.push({
@@ -216,7 +218,7 @@ function sankey(m: Computed, from: string, to: string) {
     links.push({ source: `in:${k}`, target: "hub", value: v })
   }
   if (refunds > 0) {
-    nodes.push({ id: "in:refunds", label: "Refunds", color: "green-soft" })
+    nodes.push({ id: "in:refunds", label: refundLabel, color: "green-soft" })
     links.push({ source: "in:refunds", target: "hub", value: refunds })
   }
   if (overspent) {

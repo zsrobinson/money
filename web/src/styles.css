@@ -3,6 +3,22 @@
 /* Scan this app's own sources too. */
 @source "./";
 
+/*
+ * Phones: every control is at least 32px tall (and icon buttons 32px
+ * wide), however compact it is on a desktop.
+ */
+@media (max-width: 639px) {
+  [data-slot="button"]:is(.h-6, .h-7),
+  [data-slot="popover-trigger"]:is(.h-6, .h-7),
+  [data-slot="select-trigger"][data-size="sm"] {
+    min-height: 2rem;
+  }
+  [data-slot="button"]:is(.size-6, .size-7) {
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+}
+
 /* A caution tone, for "ahead of pace" and items due soon. */
 @theme inline {
   --color-warning: var(--warning);

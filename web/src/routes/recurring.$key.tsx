@@ -39,7 +39,7 @@ import {
   RecurringIcon,
   STATUS_LABEL,
 } from "@/components/recurring"
-import { TxnRows } from "@/components/transactions"
+import { CompactTxnList } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
   CADENCE,
@@ -50,7 +50,6 @@ import {
   epochMonthYear,
   fullDate,
   money,
-  moneyTick,
   pluralize,
   relativeDay,
   shortDate,
@@ -247,7 +246,10 @@ function ItemView({ item: i }: { item: RecurringDetail }) {
               }}
               references={[{ value: Math.abs(i.amountCents) / 100 }]}
               format={(v) => money(Math.round(v * 100))}
-              formatTick={moneyTick}
+              // Small charges need cents on the axis, not rounded dollars.
+              formatTick={(v) =>
+                money(Math.round(v * 100), { whole: Number.isInteger(v) })
+              }
               formatTime={epochFullDate}
               formatTimeTick={monthlyish ? epochMonthYear : epochDate}
               className="h-56"
@@ -383,12 +385,12 @@ function ItemView({ item: i }: { item: RecurringDetail }) {
           ) : null
         }
       >
-        <TxnRows
-          items={i.transactions.slice(0, 12)}
-          secondary="account"
-          grouped={false}
-          className="border-t"
-        />
+        <div className="border-t">
+          <CompactTxnList
+            items={i.transactions.slice(0, 12)}
+            secondary="account"
+          />
+        </div>
       </SectionCard>
     </Page>
   )

@@ -288,9 +288,12 @@ export function RangeSelect({
 export function Change({
   cents,
   suffix,
+  whole,
 }: {
   cents: number
   suffix?: ReactNode
+  /** Whole dollars; by default only from $1,000. */
+  whole?: boolean
 }) {
   return (
     <span className="tabular-nums">
@@ -299,7 +302,10 @@ export function Change({
           cents > 0 ? "text-positive" : cents < 0 ? "text-negative" : ""
         }
       >
-        {money(cents, { sign: true, whole: Math.abs(cents) >= 100000 })}
+        {money(cents, {
+          sign: true,
+          whole: whole ?? Math.abs(cents) >= 100000,
+        })}
       </span>
       {suffix ? <span className="text-muted-foreground"> {suffix}</span> : null}
     </span>

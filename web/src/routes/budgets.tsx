@@ -91,6 +91,7 @@ function BudgetsPage() {
   })
   const d = q.data
   const mobile = useIsMobile()
+  const shown = history.data?.months.slice(mobile ? -6 : 0) ?? []
   const month = d?.month ?? s.month
   const copy = useSend<void, { copied: number }>(
     "POST",
@@ -194,17 +195,13 @@ function BudgetsPage() {
               title="Budget and spending by month"
               footer={
                 <span className="mr-auto text-sm text-muted-foreground">
-                  Spent in budgets, last 12 months{" "}
+                  Spent in budgets, last {shown.length} months{" "}
                   <span className="font-medium text-foreground tabular-nums">
-                    {whole(
-                      history.data.months.reduce((t, m) => t + m.spentCents, 0)
-                    )}
+                    {whole(shown.reduce((t, m) => t + m.spentCents, 0))}
                   </span>{" "}
                   of{" "}
                   <span className="font-medium text-foreground tabular-nums">
-                    {whole(
-                      history.data.months.reduce((t, m) => t + m.budgetCents, 0)
-                    )}
+                    {whole(shown.reduce((t, m) => t + m.budgetCents, 0))}
                   </span>
                 </span>
               }
@@ -212,7 +209,7 @@ function BudgetsPage() {
               <TrendChart
                 kind="bar"
                 label="Total budget and spending in budgeted categories by month"
-                data={history.data.months.slice(mobile ? -6 : 0).map((m) => ({
+                data={shown.map((m) => ({
                   time: monthEpoch(m.month),
                   budget: m.budgetCents / 100,
                   spent: m.spentCents / 100,
@@ -229,7 +226,8 @@ function BudgetsPage() {
                     : epochMonthYear(t)
                 }
                 formatTimeTick={epochMonthYear}
-                markers={[{ time: monthEpoch(d.current), label: "So far" }]}
+                // The shaded month is in progress; its tooltip says so.
+                markers={[{ time: monthEpoch(d.current) }]}
                 className="h-56"
               />
             </SectionCard>
@@ -718,7 +716,7 @@ function BudgetLine({
               })
             }
           />
-          {onlyMonth ? (
+          {onlyMonth && r.source !== "month" ? (
             <span className="text-[11px] text-muted-foreground">
               {monthShort(month)} only
             </span>

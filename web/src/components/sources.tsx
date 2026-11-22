@@ -4,7 +4,7 @@ import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { ArrowRightIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 import { Loading } from "@/components/money"
-import { errorMessage, send } from "@/lib/api"
+import { errorMessage, send, ApiError } from "@/lib/api"
 import { pluralize, syncLabel } from "@/lib/format"
 import { metaQuery } from "@/lib/queries"
 import type { Source } from "@/lib/types"
@@ -78,12 +78,13 @@ export function SyncNow() {
     mutationFn: () => send<{ requestedAt: string }>("POST", "/api/sync"),
     onSettled: () => client.invalidateQueries({ queryKey: ["money", "meta"] }),
   })
+  const throttled = sync.error instanceof ApiError && sync.error.status === 429
   return (
     <div className="flex w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
       <span
         role="status"
         className={
-          sync.isError
+          sync.isError && !throttled
             ? "mr-auto text-sm text-destructive"
             : "mr-auto text-sm text-muted-foreground"
         }
@@ -96,7 +97,8 @@ export function SyncNow() {
       </span>
       <Button
         variant="outline"
-        disabled={sync.isPending}
+        // A request was just made; the sync side runs at most every 5 minutes.
+        disabled={sync.isPending || sync.isSuccess || throttled}
         onClick={() => sync.mutate()}
       >
         <RefreshCwIcon

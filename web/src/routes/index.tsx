@@ -27,11 +27,11 @@ import {
 } from "@/components/money"
 import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
 import { useCategories } from "@/components/category-style"
+import { ACCOUNT_GROUPS, accountGroup } from "@/components/accounts"
 import { GoalsCard } from "@/components/goals"
 import { TxnRows } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
-  accountKind,
   CADENCE,
   epoch,
   epochFullDate,
@@ -100,7 +100,11 @@ function Dashboard() {
           <Amount cents={s.netWorth.assetsCents} tone="plain" whole />
         </Stat>
         <Stat label="Liabilities">
-          <Amount cents={s.netWorth.liabilitiesCents} tone="plain" whole />
+          <Amount
+            cents={Math.abs(s.netWorth.liabilitiesCents)}
+            tone="plain"
+            whole
+          />
         </Stat>
       </StatRow>
       <TrendChart
@@ -182,7 +186,7 @@ function Dashboard() {
               {money(s.budget.spentCents, { whole: true })}
             </Stat>
             <span
-              className={`text-sm ${
+              className={`text-sm whitespace-nowrap ${
                 s.budget.over ? "text-negative" : "text-muted-foreground"
               }`}
             >
@@ -509,6 +513,9 @@ function BudgetMeter({
   )
 }
 
+/** The same groups as the Accounts page. */
+const groupLabel = (a: Account) => accountGroup(a).label
+
 /** Accounts by kind; `compact` shows only each kind's total, for a phone. */
 function AccountGroups({
   accounts,
@@ -517,12 +524,12 @@ function AccountGroups({
   accounts: Account[]
   compact?: boolean
 }) {
-  const kinds = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
+  const kinds = ACCOUNT_GROUPS.map((g) => g.label)
   if (compact)
     return (
       <ul className="flex flex-col divide-y divide-border/70">
         {kinds.map((kind) => {
-          const list = accounts.filter((a) => accountKind(a) === kind)
+          const list = accounts.filter((a) => groupLabel(a) === kind)
           if (!list.length) return null
           return (
             <li
@@ -547,7 +554,7 @@ function AccountGroups({
   return (
     <div className="flex flex-col">
       {kinds.map((kind) => {
-        const list = accounts.filter((a) => accountKind(a) === kind)
+        const list = accounts.filter((a) => groupLabel(a) === kind)
         if (!list.length) return null
         const total = list.reduce((sum, a) => sum + (a.balanceCents ?? 0), 0)
         return (

@@ -140,7 +140,7 @@ const BUILT_IN_STYLE: Record<string, { icon: string; color: string }> = {
   entertainment: { icon: "clapperboard", color: "purple" },
   income: { icon: "banknote", color: "green" },
   fees: { icon: "receipt", color: "red-soft" },
-  loan_payments: { icon: "landmark", color: "cyan-soft" },
+  loan_payments: { icon: "landmark", color: "yellow-soft" },
   bank_transfer: { icon: "arrow-left-right", color: "green-soft" },
   internal_transfer: { icon: "repeat", color: "blue-soft" },
   peer_payment: { icon: "users", color: "purple-soft" },

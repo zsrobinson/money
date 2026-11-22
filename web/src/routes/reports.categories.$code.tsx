@@ -121,17 +121,8 @@ function CategoryDetail() {
       ) : (
         <>
           <StatRow>
-            <Stat
-              label="This month"
-              info={
-                d.children.length
-                  ? "Includes the categories inside it."
-                  : undefined
-              }
-            >
-              {money(thisMonth, { whole: true })}
-            </Stat>
-            <Stat label="Monthly average" info="Over the last 11 full months.">
+            <Stat label="This month">{money(thisMonth, { whole: true })}</Stat>
+            <Stat label="Avg / month (11 full months)">
               {money(d.averageCents, { whole: true })}
             </Stat>
             <Stat label="Last 12 months">

@@ -300,7 +300,7 @@ export function NetWorthChanges({ data }: { data: NetWorthByType }) {
           <span className="min-w-0 flex-1">{BANDS[g].label}</span>
           <span className="font-medium">{money(last[g], { whole: true })}</span>
           <span className="w-24 text-right text-xs">
-            <Change cents={data.change[g] ?? 0} />
+            <Change cents={data.change[g] ?? 0} whole />
           </span>
         </li>
       ))}
