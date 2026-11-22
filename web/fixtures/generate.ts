@@ -793,13 +793,15 @@ export function generate(outDir: string) {
   app.exec("BEGIN")
   const cat = (code: string, label: string, parent: string, grp = "expense") =>
     app
-      .prepare("INSERT INTO categories VALUES(?,?,?,?,0,NULL)")
+      .prepare(
+        "INSERT INTO categories(code,label,grp,parent,hidden,sort) VALUES(?,?,?,?,0,NULL)"
+      )
       .run(code, label, grp, parent)
   cat("cat_coffee", "Coffee shops", "food")
   cat("cat_subscriptions", "Subscriptions", "entertainment")
   app
     .prepare(
-      "INSERT INTO categories VALUES('bank_transfer','Transfers and card payments','transfer',NULL,0,NULL)"
+      "INSERT INTO categories(code,label,grp,parent,hidden,sort) VALUES('bank_transfer','Transfers and card payments','transfer',NULL,0,NULL)"
     )
     .run()
   const tag = (id: string, name: string, hue: string) =>
@@ -815,7 +817,9 @@ export function generate(outDir: string) {
     enabled = 1
   ) =>
     app
-      .prepare("INSERT INTO rules VALUES(?,?,?,?,?,?)")
+      .prepare(
+        "INSERT INTO rules(id,position,enabled,match_json,action_json,created_at) VALUES(?,?,?,?,?,?)"
+      )
       .run(
         id,
         position,
@@ -902,7 +906,9 @@ export function generate(outDir: string) {
       )
       .run(rideshare.id, "travel", at)
   const budget = (code: string, cents: number) =>
-    app.prepare("INSERT INTO budget_defaults VALUES(?,?)").run(code, cents)
+    app
+      .prepare("INSERT INTO budget_plans VALUES(?,'0001-01',?)")
+      .run(code, cents)
   budget("food", 70000)
   budget("cat_coffee", 6000)
   budget("housing", 200000)
@@ -922,10 +928,17 @@ export function generate(outDir: string) {
     target: number,
     date: string | null,
     accounts: string[]
-  ) =>
+  ) => {
     app
-      .prepare("INSERT INTO goals VALUES(?,?,?,?,?,?,?)")
+      .prepare(
+        "INSERT INTO goals(id,name,kind,target_cents,target_date,account_ids_json,created_at) VALUES(?,?,?,?,?,?,?)"
+      )
       .run(id, name, kind, target, date, JSON.stringify(accounts.map(acct)), at)
+    for (const a of accounts)
+      app
+        .prepare("INSERT INTO goal_allocations VALUES(?,?,'all',NULL)")
+        .run(id, acct(a))
+  }
   goal("goal_emergency", "Emergency fund", "save", 4000000, "2027-06-30", [
     "savings",
   ])
