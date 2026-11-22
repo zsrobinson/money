@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   Page,
+  PageActions,
   PageGrid,
   PageHeader,
   PageMeta,
@@ -15,8 +16,16 @@ import {
   Unavailable,
 } from "@zsrobinson/shell/blocks/detail-list"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
+import { Badge } from "@zsrobinson/shell/ui/badge"
+import { Button } from "@zsrobinson/shell/ui/button"
+import { PencilIcon } from "lucide-react"
+import {
+  allocationLabel,
+  goalDone,
+  GoalStatus,
+  OverlapAlert,
+} from "@/components/goals"
 import { Loading, Meter, SectionCard, Stat, StatRow } from "@/components/money"
-import { GoalForm } from "@/components/goals"
 import { usePageTitle } from "@/lib/crumb"
 import {
   epoch,
@@ -28,7 +37,6 @@ import {
 } from "@/lib/format"
 import { goalQuery, metaQuery } from "@/lib/queries"
 import type { Goal } from "@/lib/types"
-import { GoalStatus } from "./goals.index"
 
 export const Route = createFileRoute("/goals/$id")({
   staticData: { crumbs: [{ label: "Goals", to: "/goals" }] },
@@ -90,91 +98,115 @@ function GoalPage() {
     g.kind === "payoff"
       ? g.currentCents
       : Math.max(0, g.targetCents - g.currentCents)
-  const monthsLeft = g.targetDate
-    ? (epoch(g.targetDate) - epoch(today)) / MONTH_MS
-    : null
-  const needed =
-    monthsLeft && monthsLeft > 0 && remaining > 0
-      ? Math.ceil(remaining / monthsLeft)
-      : null
   const points = goalPoints(g, today)
   const pace =
     g.kind === "payoff" ? -g.monthlyChangeCents : g.monthlyChangeCents
+  const needed = g.progress >= 1 ? null : g.neededMonthlyCents
   return (
     <Page>
       <PageHeader>
         <div className="flex min-w-0 flex-col">
-          <PageTitle className="truncate">{g.name}</PageTitle>
+          <PageTitle>{g.name}</PageTitle>
           <PageMeta>
             <span>{g.kind === "payoff" ? "Paying off debt" : "Saving up"}</span>
-            <span className="truncate">{g.accountNames.join(", ")}</span>
+            {g.targetDate ? <span>By {fullDate(g.targetDate)}</span> : null}
             <GoalStatus goal={g} />
           </PageMeta>
         </div>
+        <PageActions>
+          <Button
+            size="sm"
+            variant="outline"
+            render={<Link to="/goals/$id/edit" params={{ id: g.id }} />}
+            nativeButton={false}
+          >
+            <PencilIcon data-icon="inline-start" />
+            Edit goal
+          </Button>
+        </PageActions>
       </PageHeader>
+      <OverlapAlert overlaps={g.overlaps} />
       <PageGrid layout="wide">
+        <SectionCard title="Progress">
+          <StatRow className="mb-4">
+            <Stat label={g.kind === "payoff" ? "Paid off" : "Saved"}>
+              {money(goalDone(g), { whole: true })}
+            </Stat>
+            <Stat label={g.kind === "payoff" ? "Still owed" : "To go"}>
+              {money(remaining, { whole: true })}
+            </Stat>
+            <Stat label="Complete">{percent(g.progress)}</Stat>
+          </StatRow>
+          <Meter
+            label={`${g.name} progress`}
+            value={g.progress}
+            tone={g.progress >= 1 ? "positive" : "default"}
+          />
+          <TrendChart
+            label={`${g.name}: last 12 months and projection`}
+            baseline="data"
+            curve="linear"
+            data={points}
+            config={{
+              value: {
+                label: g.kind === "payoff" ? "Owed" : "Saved",
+                color: "var(--chart-1)",
+              },
+              projection: {
+                label: "At current pace",
+                color: "var(--chart-neutral)",
+              },
+            }}
+            dashed={["projection"]}
+            // Labels sit at the left, clear of the projection's last stretch.
+            references={[
+              g.kind === "payoff"
+                ? { value: 0, label: "Paid off", side: "left" }
+                : {
+                    value: g.targetCents / 100,
+                    label: `Target ${money(g.targetCents, { whole: true })}`,
+                    side: "left",
+                  },
+            ]}
+            markers={
+              g.targetDate
+                ? [{ time: epoch(g.targetDate), label: "Target date" }]
+                : []
+            }
+            format={(v) => money(Math.round(v * 100), { whole: true })}
+            formatTick={moneyTick}
+            formatTime={epochFullDate}
+            utc
+            className="mt-4 h-56"
+          />
+        </SectionCard>
         <PageStack>
-          <SectionCard title="Progress">
-            <StatRow className="mb-4">
-              <Stat label={g.kind === "payoff" ? "Paid off" : "Saved"}>
-                {money(
-                  g.kind === "payoff"
-                    ? g.targetCents - g.currentCents
-                    : g.currentCents,
-                  { whole: true }
-                )}
-              </Stat>
-              <Stat label={g.kind === "payoff" ? "Still owed" : "To go"}>
-                {money(remaining, { whole: true })}
-              </Stat>
-              <Stat label="Complete">{percent(g.progress)}</Stat>
-            </StatRow>
-            <Meter
-              label={`${g.name} progress`}
-              value={g.progress}
-              tone={g.progress >= 1 ? "positive" : "default"}
-            />
-            <TrendChart
-              label={`${g.name}: last 12 months and projection`}
-              baseline="data"
-              curve="linear"
-              data={points}
-              config={{
-                value: {
-                  label: g.kind === "payoff" ? "Owed" : "Saved",
-                  color: "var(--chart-1)",
-                },
-                projection: {
-                  label: "At current pace",
-                  color: "var(--chart-neutral)",
-                },
-              }}
-              dashed={["projection"]}
-              // Labels sit at the left, clear of the projection's last stretch.
-              references={[
-                g.kind === "payoff"
-                  ? { value: 0, label: "Paid off", side: "left" }
-                  : {
-                      value: g.targetCents / 100,
-                      label: `Target ${money(g.targetCents, { whole: true })}`,
-                      side: "left",
-                    },
-              ]}
-              markers={
-                g.targetDate
-                  ? [{ time: epoch(g.targetDate), label: "Target date" }]
-                  : []
-              }
-              format={(v) => money(Math.round(v * 100), { whole: true })}
-              formatTick={moneyTick}
-              formatTime={epochFullDate}
-              utc
-              className="mt-4 h-56"
-            />
-          </SectionCard>
-          <SectionCard title="Pace">
+          <SectionCard title="Each month">
             <DetailList>
-              <DetailRow label="Recent monthly progress">
+              <DetailRow label="Planned">
+                {g.monthlyCents ? (
+                  money(g.monthlyCents, { whole: true })
+                ) : (
+                  <Unavailable>Not set</Unavailable>
+                )}
+              </DetailRow>
+              <DetailRow label="Needed">
+                {g.progress >= 1 ? (
+                  "Nothing"
+                ) : needed != null ? (
+                  <span className="flex items-center gap-2">
+                    {g.monthlyCents && needed > g.monthlyCents ? (
+                      <Badge variant="outline" className="font-normal">
+                        {money(needed - g.monthlyCents, { whole: true })} short
+                      </Badge>
+                    ) : null}
+                    {money(needed, { whole: true })}
+                  </span>
+                ) : (
+                  <Unavailable>Set a target date</Unavailable>
+                )}
+              </DetailRow>
+              <DetailRow label="Recent pace">
                 <span
                   className={
                     pace > 0 ? "text-positive" : pace < 0 ? "text-negative" : ""
@@ -190,17 +222,6 @@ function GoalPage() {
                       : " withdrawn"}
                 </span>
               </DetailRow>
-              <DetailRow label="Needed each month">
-                {g.progress >= 1 ? (
-                  "Nothing"
-                ) : needed != null ? (
-                  <span className="whitespace-nowrap">
-                    {money(needed, { whole: true })}
-                  </span>
-                ) : (
-                  <Unavailable>Set a target date</Unavailable>
-                )}
-              </DetailRow>
               <DetailRow label="Projected finish">
                 {g.progress >= 1 ? (
                   "Reached"
@@ -210,20 +231,37 @@ function GoalPage() {
                   <Unavailable>Not at the current pace</Unavailable>
                 )}
               </DetailRow>
-              <DetailRow label="Target date">
-                {g.targetDate ? (
-                  fullDate(g.targetDate)
-                ) : (
-                  <Unavailable>None</Unavailable>
-                )}
-              </DetailRow>
             </DetailList>
           </SectionCard>
+          <SectionCard title={g.kind === "payoff" ? "Debts" : "Accounts"} flush>
+            <ul className="flex flex-col border-t">
+              {g.allocations.map((a) => (
+                <li
+                  key={a.accountId}
+                  className="border-b border-border/70 last:border-b-0"
+                >
+                  <Link
+                    to="/accounts/$id"
+                    params={{ id: a.accountId }}
+                    className="flex min-h-13 items-center gap-3 px-4 py-2 outline-none hover:bg-muted/60 focus-visible:bg-muted sm:px-5"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-sm font-medium">
+                        {a.accountName}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {allocationLabel(a)}
+                      </span>
+                    </span>
+                    <span className="text-sm font-medium tabular-nums">
+                      {money(a.cents, { whole: true })}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
         </PageStack>
-        <GoalForm
-          key={`${g.id}-${g.targetCents}-${g.name}-${g.targetDate}`}
-          goal={g}
-        />
       </PageGrid>
     </Page>
   )

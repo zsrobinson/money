@@ -28,6 +28,7 @@ import { Route as RulesIdRouteImport } from './routes/rules.$id'
 import { Route as RulesNewRouteImport } from './routes/rules.new'
 import { Route as TransactionsIndexRouteImport } from './routes/transactions.index'
 import { Route as TransactionsIdRouteImport } from './routes/transactions.$id'
+import { Route as GoalsIdEditRouteImport } from './routes/goals.$id_.edit'
 import { Route as ReportsCategoriesCodeRouteImport } from './routes/reports.categories.$code'
 import { Route as ReportsMerchantsIndexRouteImport } from './routes/reports.merchants.index'
 import { Route as ReportsMerchantsKeyRouteImport } from './routes/reports.merchants.$key'
@@ -127,6 +128,11 @@ const TransactionsIdRoute = TransactionsIdRouteImport.update({
   path: '/transactions/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GoalsIdEditRoute = GoalsIdEditRouteImport.update({
+  id: '/goals/$id_/edit',
+  path: '/goals/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsCategoriesCodeRoute = ReportsCategoriesCodeRouteImport.update({
   id: '/reports/categories/$code',
   path: '/reports/categories/$code',
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/reports/': typeof ReportsIndexRoute
   '/rules/': typeof RulesIndexRoute
   '/transactions/': typeof TransactionsIndexRoute
+  '/goals/$id/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants/': typeof ReportsMerchantsIndexRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsIndexRoute
   '/rules': typeof RulesIndexRoute
   '/transactions': typeof TransactionsIndexRoute
+  '/goals/$id/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants': typeof ReportsMerchantsIndexRoute
@@ -212,6 +220,7 @@ export interface FileRoutesById {
   '/reports/': typeof ReportsIndexRoute
   '/rules/': typeof RulesIndexRoute
   '/transactions/': typeof TransactionsIndexRoute
+  '/goals/$id_/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants/': typeof ReportsMerchantsIndexRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/reports/'
     | '/rules/'
     | '/transactions/'
+    | '/goals/$id/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants/'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/rules'
     | '/transactions'
+    | '/goals/$id/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/reports/'
     | '/rules/'
     | '/transactions/'
+    | '/goals/$id_/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants/'
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   ReportsIndexRoute: typeof ReportsIndexRoute
   RulesIndexRoute: typeof RulesIndexRoute
   TransactionsIndexRoute: typeof TransactionsIndexRoute
+  GoalsIdEditRoute: typeof GoalsIdEditRoute
   ReportsCategoriesCodeRoute: typeof ReportsCategoriesCodeRoute
   ReportsMerchantsKeyRoute: typeof ReportsMerchantsKeyRoute
   ReportsMerchantsIndexRoute: typeof ReportsMerchantsIndexRoute
@@ -451,6 +464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransactionsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/goals/$id_/edit': {
+      id: '/goals/$id_/edit'
+      path: '/goals/$id/edit'
+      fullPath: '/goals/$id/edit'
+      preLoaderRoute: typeof GoalsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/categories/$code': {
       id: '/reports/categories/$code'
       path: '/reports/categories/$code'
@@ -495,6 +515,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsIndexRoute: ReportsIndexRoute,
   RulesIndexRoute: RulesIndexRoute,
   TransactionsIndexRoute: TransactionsIndexRoute,
+  GoalsIdEditRoute: GoalsIdEditRoute,
   ReportsCategoriesCodeRoute: ReportsCategoriesCodeRoute,
   ReportsMerchantsKeyRoute: ReportsMerchantsKeyRoute,
   ReportsMerchantsIndexRoute: ReportsMerchantsIndexRoute,
