@@ -21,7 +21,7 @@
     "@tanstack/react-query": "^5.108.2",
     "@tanstack/react-router": "^1.170.46",
     "@tanstack/router-plugin": "^1.169.0",
-    "@zsrobinson/shell": "git+https://github.com/zsrobinson/shell.git#93e9aac46c977c3d4e9086952c2865da903d919b",
+    "@zsrobinson/shell": "git+https://github.com/zsrobinson/shell.git#b62a0916fe11d82f72ebb5f9724229e51878b7cd",
     "hono": "^4.10.0",
     "jose": "^6.1.0",
     "lucide-react": "^1.77.0",

@@ -225,6 +225,14 @@ function CashFlowPage() {
               }
               formatTimeTick={epochMonthYear}
               markers={[{ time: monthEpoch(current), label: "So far" }]}
+              // Click a month's bars to see it below.
+              selected={p.kind === "month" ? monthEpoch(p.key) : undefined}
+              onSelect={(t) =>
+                set({
+                  period: undefined,
+                  key: new Date(t).toISOString().slice(0, 7),
+                })
+              }
               className="h-64"
             />
           </SectionCard>
