@@ -2,7 +2,7 @@ import { chmodSync, existsSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 
 /** Bump together with docs/overrides.md whenever a table or evaluator rule changes. */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 const V1 = `
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
@@ -39,6 +39,41 @@ CREATE TABLE IF NOT EXISTS txn_tags(txn_id TEXT NOT NULL, tag_id TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS txn_tags_tag ON txn_tags(tag_id);
 `
 
+// v4: manual accounts and transactions, category styling, custom top-level
+// categories and merges, forward budget plans, goal allocations, rule scope
+// and saved transaction views.
+const V4 = `
+CREATE TABLE IF NOT EXISTS manual_accounts(id TEXT PRIMARY KEY, name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('cash','credit','loan','investment','property','vehicle','other')),
+  currency TEXT NOT NULL DEFAULT 'USD', created_at TEXT NOT NULL, closed_at TEXT);
+CREATE TABLE IF NOT EXISTS manual_balances(account_id TEXT NOT NULL, date TEXT NOT NULL,
+  cents INTEGER NOT NULL, PRIMARY KEY(account_id, date));
+CREATE TABLE IF NOT EXISTS manual_txns(id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+  date TEXT NOT NULL, amount_cents INTEGER NOT NULL, merchant TEXT, category TEXT NOT NULL,
+  created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS manual_txns_account ON manual_txns(account_id, date);
+CREATE TABLE IF NOT EXISTS budget_plans(category TEXT NOT NULL, from_month TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL, PRIMARY KEY(category, from_month));
+CREATE TABLE IF NOT EXISTS goal_allocations(goal_id TEXT NOT NULL, account_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('all','amount','percent')), value INTEGER,
+  PRIMARY KEY(goal_id, account_id));
+CREATE TABLE IF NOT EXISTS saved_views(id TEXT PRIMARY KEY, name TEXT NOT NULL,
+  search_json TEXT NOT NULL, position INTEGER NOT NULL);
+`
+
+function addColumn(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+  type: string
+) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string
+  }[]
+  if (!columns.some((c) => c.name === column))
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+}
+
 /**
  * Open (creating if needed) and migrate the app database. Idempotent. The
  * file is 0640 with a rollback journal, so the sync user's group can read it
@@ -69,11 +104,36 @@ export function migrate(db: DatabaseSync) {
       )
     if (current < 2) db.exec(V2)
     // v3: a person can correct a transaction's date.
-    const columns = db.prepare("PRAGMA table_info(txn_overrides)").all() as {
-      name: string
-    }[]
-    if (!columns.some((c) => c.name === "date"))
-      db.exec("ALTER TABLE txn_overrides ADD COLUMN date TEXT")
+    addColumn(db, "txn_overrides", "date", "TEXT")
+    if (current < 4) {
+      db.exec(V4)
+      addColumn(db, "categories", "icon", "TEXT")
+      addColumn(db, "categories", "color", "TEXT")
+      addColumn(db, "categories", "merged_into", "TEXT")
+      addColumn(db, "categories", "budget_kind", "TEXT")
+      addColumn(db, "rules", "applies_from", "TEXT")
+      addColumn(db, "goals", "monthly_cents", "INTEGER")
+      // Defaults become plans that start before any data; each goal's
+      // accounts count in full, as before.
+      db.exec(`INSERT OR IGNORE INTO budget_plans(category, from_month, amount_cents)
+        SELECT category, '0001-01', amount_cents FROM budget_defaults;
+        DELETE FROM budget_defaults;`)
+      for (const g of db
+        .prepare("SELECT id, account_ids_json FROM goals")
+        .all() as {
+        id: string
+        account_ids_json: string
+      }[])
+        for (const account of JSON.parse(g.account_ids_json) as string[])
+          db.prepare(
+            "INSERT OR IGNORE INTO goal_allocations VALUES(?,?,'all',NULL)"
+          ).run(g.id, account)
+      // Review starts from the day this version first runs, so a first sync
+      // of years of history does not all need review.
+      db.prepare("INSERT OR IGNORE INTO settings VALUES('reviewSince', ?)").run(
+        JSON.stringify(new Date().toISOString().slice(0, 10))
+      )
+    }
     if (!row)
       db.prepare("INSERT INTO schema_version VALUES(?)").run(SCHEMA_VERSION)
     else if (current < SCHEMA_VERSION)
