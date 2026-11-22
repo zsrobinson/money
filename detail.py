@@ -166,7 +166,8 @@ def publish(db, path):
             sid=source_ref(db,item)
             if out.execute('SELECT 1 FROM sources WHERE id=? AND status!=\'disabled\'',(sid,)).fetchone():out.execute('INSERT INTO recurring_hints VALUES(?,?,?,?,?,?)',(sid,merchant,currency,frequency,month,active))
         for i,(code,values) in enumerate(CATEGORIES.items()):
-            group='income' if code=='income' else 'transfer' if code in ('bank_transfer','internal_transfer','peer_payment') else 'expense'
+            # The web app counts peer payments in spending by default; MCP keeps them separate.
+            group='income' if code=='income' else 'transfer' if code in ('bank_transfer','internal_transfer') else 'expense'
             out.execute('INSERT INTO categories VALUES(?,?,?,?,?)',(code,values[0],group,None,i))
         out.commit();out.close();os.chmod(temp,0o640)
         with open(temp,'rb') as f:os.fsync(f.fileno())

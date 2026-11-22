@@ -174,3 +174,11 @@ def test_wallet_edits_dates_splits_and_hidden_use_same_rules(snapshot,tmp_path,m
     with sqlite3.connect(aggregate) as public:
         assert public.execute("SELECT SUM(spending) FROM daily WHERE category='fees' AND day='2026-10-31'").fetchone()==(4.0,)
     assert list(wallet_rows(db))==rows
+
+
+def test_peer_payments_publish_as_expense_group_for_web(snapshot,tmp_path):
+    db,_=snapshot
+    target=tmp_path/'detail.sqlite';publish(db,target)
+    with sqlite3.connect(target) as out:
+        groups=dict(out.execute('SELECT code,"group" FROM categories'))
+    assert groups['peer_payment']=='expense' and groups['bank_transfer']=='transfer' and groups['internal_transfer']=='transfer' and groups['income']=='income'
