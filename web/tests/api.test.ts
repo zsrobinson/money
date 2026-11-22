@@ -41,7 +41,7 @@ test("app database is versioned and migrations are idempotent", () => {
         version: number
       }
     ).version,
-    3
+    4
   )
   db.close()
   // A version 2 database (no date column) upgrades in place and keeps rows.
@@ -59,7 +59,7 @@ test("app database is versioned and migrations are idempotent", () => {
         version: number
       }
     ).version,
-    3
+    4
   )
   assert.deepEqual(
     {
@@ -294,48 +294,109 @@ test("bulk edits validate tags and categories", async () => {
     assert.ok(model.get().txn.get(id)!.tags.includes("tag_tax"))
 })
 
-test("budgets: month amount beats default, null clears, copy previous", async () => {
+test("budgets: amounts apply from a month on; only-this-month wins; copy previous", async () => {
   const month = FIXTURE_TODAY.slice(0, 7)
+  const next = (n: number) => {
+    const [y, mo] = month.split("-").map(Number)
+    const d = new Date(Date.UTC(y, mo - 1 + n, 1))
+    return d.toISOString().slice(0, 7)
+  }
   const row = async (code: string, m = month) =>
-    (await call("GET", `/budgets?month=${m}`)).json.rows.find(
+    (await call("GET", `/budgets?month=${m}`)).json.expenses.find(
       (r: { code: string }) => r.code === code
     )
   assert.equal((await row("food")).budgetCents, 70000)
+  // Typing an amount sets this month and every later one.
   await call("PUT", `/budgets/${month}/food`, { amountCents: 50000 })
   assert.equal((await row("food")).budgetCents, 50000)
-  assert.equal((await row("food")).source, "month")
-  await call("PUT", `/budgets/${month}/food`, { amountCents: null })
-  assert.equal((await row("food")).source, "default")
-  await call("PUT", `/budgets/${month}/travel`, {
-    amountCents: 12000,
-    asDefault: true,
+  assert.equal((await row("food")).source, "plan")
+  assert.equal((await row("food", next(3))).budgetCents, 50000)
+  assert.equal((await row("food", next(-1))).budgetCents, 70000)
+  // Only this month.
+  await call("PUT", `/budgets/${next(1)}/food`, {
+    amountCents: 10000,
+    scope: "month",
   })
-  assert.equal((await row("travel", "2027-02")).budgetCents, 12000)
+  assert.equal((await row("food", next(1))).budgetCents, 10000)
+  assert.equal((await row("food", next(1))).source, "month")
+  assert.equal((await row("food", next(2))).budgetCents, 50000)
+  await call("PUT", `/budgets/${next(1)}/food`, {
+    amountCents: null,
+    reset: true,
+  })
+  assert.equal((await row("food", next(1))).budgetCents, 50000)
+  // Clearing from a month on keeps earlier months.
+  await call("PUT", `/budgets/${next(2)}/food`, { amountCents: null })
+  assert.equal((await row("food", next(2))).budgetCents, null)
+  assert.equal((await row("food", next(1))).budgetCents, 50000)
+  await call("PUT", `/budgets/${month}/food`, { amountCents: 70000 })
+  assert.equal((await row("food", next(4))).budgetCents, 70000)
   assert.equal(
     (await call("PUT", `/budgets/2026-13/food`, { amountCents: 1 })).status,
     422
   )
   assert.equal(
-    (await call("PUT", `/budgets/${month}/income`, { amountCents: 1 })).status,
+    (await call("PUT", `/budgets/${month}/bank_transfer`, { amountCents: 1 }))
+      .status,
     404
   )
-  await call("PUT", `/budgets/${month}/health`, { amountCents: 9100 })
-  const copied = await call("POST", `/budgets/2026-12/copy-previous`)
+  await call("PUT", `/budgets/${next(1)}/health`, { amountCents: 9100 })
+  await call("PUT", `/budgets/${next(2)}/health`, { amountCents: 100 })
+  const copied = await call("POST", `/budgets/${next(2)}/copy-previous`)
   assert.ok(copied.json.copied >= 1)
-  assert.equal((await row("health", "2026-12")).budgetCents, 9100)
+  assert.equal((await row("health", next(2))).budgetCents, 9100)
+  await call("PUT", `/budgets/${month}/health`, { amountCents: 8000 })
 })
 
-test("goals validate account kinds and track progress", async () => {
+test("income budgets, goals and flex budgeting give left to budget", async () => {
+  const month = FIXTURE_TODAY.slice(0, 7)
+  await call("PUT", `/budgets/${month}/income`, { amountCents: 900000 })
+  const b = (await call("GET", `/budgets?month=${month}`)).json
+  const income = b.income.find((r: { code: string }) => r.code === "income")
+  assert.equal(income.budgetCents, 900000)
+  assert.equal(b.totals.plannedIncomeCents, 900000)
+  assert.equal(
+    b.totals.leftToBudgetCents,
+    900000 - b.totals.plannedExpenseCents - b.totals.goalsCents
+  )
+  // Flex: flexible categories share one pool and have no amounts of their own.
+  await call("PATCH", "/categories/shopping", { budgetKind: "flexible" })
+  await call("PATCH", "/categories/entertainment", { budgetKind: "flexible" })
+  await call("PUT", "/budgets/mode", { mode: "flex" })
+  await call("PUT", `/budgets/${month}/__flexible`, { amountCents: 50000 })
+  const flex = (await call("GET", `/budgets?month=${month}`)).json
+  const shopping = flex.expenses.find(
+    (r: { code: string }) => r.code === "shopping"
+  )
+  assert.equal(shopping.kind, "flexible")
+  assert.equal(shopping.budgetCents, null)
+  assert.equal(flex.flexible.budgetCents, 50000)
+  const ent = flex.expenses.find(
+    (r: { code: string }) => r.code === "entertainment"
+  )
+  assert.equal(flex.flexible.spentCents, shopping.spentCents + ent.spentCents)
+  assert.equal(
+    flex.totals.spentCents + flex.totals.unbudgetedCents,
+    flex.totals.totalSpentCents
+  )
+  await call("PUT", "/budgets/mode", { mode: "category" })
+  await call("PATCH", "/categories/shopping", { budgetKind: "fixed" })
+  await call("PATCH", "/categories/entertainment", { budgetKind: "fixed" })
+  await call("PUT", `/budgets/${month}/income`, { amountCents: null })
+})
+
+test("goals validate account kinds, allocate shares and warn on overlap", async () => {
   const m = model.get()
   const savings = m.accounts.find((a) => a.subtype === "savings")!
   const loan = m.accounts.find((a) => a.type === "loan")!
+  const all = (id: string) => [{ accountId: id, mode: "all" }]
   assert.equal(
     (
       await call("POST", "/goals", {
         name: "Bad",
         kind: "save",
         targetCents: 1000,
-        accountIds: [loan.id],
+        allocations: all(loan.id),
       })
     ).status,
     422
@@ -346,7 +407,7 @@ test("goals validate account kinds and track progress", async () => {
         name: "Bad",
         kind: "payoff",
         targetCents: 1000,
-        accountIds: [savings.id],
+        allocations: all(savings.id),
       })
     ).status,
     422
@@ -355,24 +416,46 @@ test("goals validate account kinds and track progress", async () => {
     name: "Trip",
     kind: "save",
     targetCents: 100000,
-    accountIds: [savings.id],
+    monthlyCents: 25000,
+    allocations: [{ accountId: savings.id, mode: "amount", value: 50000 }],
   })
   assert.equal(g.status, 201)
-  const got = await call("GET", `/goals/${g.json.id}`)
-  assert.equal(got.json.progress, 1)
-  assert.equal(
-    (
-      await call("PUT", `/goals/${g.json.id}`, {
-        name: "Trip",
-        kind: "save",
-        targetCents: 99999999,
-        targetDate: "2030-01-01",
-        accountIds: [savings.id],
-      })
-    ).status,
-    200
+  const got = (await call("GET", `/goals/${g.json.id}`)).json
+  assert.equal(got.currentCents, 50000)
+  assert.equal(got.progress, 0.5)
+  assert.equal(got.monthlyCents, 25000)
+  // Another goal taking all of savings overlaps the amounts already set aside.
+  const greedy = await call<{ id: string }>("POST", "/goals", {
+    name: "Everything",
+    kind: "save",
+    targetCents: 100000,
+    allocations: all(savings.id),
+  })
+  const clash = (await call("GET", `/goals/${g.json.id}`)).json
+  assert.ok(
+    clash.overlaps.some((o: { goals: string[] }) =>
+      o.goals.includes("Everything")
+    )
   )
-  assert.ok((await call("GET", `/goals/${g.json.id}`)).json.progress < 1)
+  await call("DELETE", `/goals/${greedy.json.id}`)
+  assert.deepEqual((await call("GET", `/goals/${g.json.id}`)).json.overlaps, [])
+  // A share of the balance.
+  await call("PUT", `/goals/${g.json.id}`, {
+    name: "Trip",
+    kind: "save",
+    targetCents: 99999999,
+    targetDate: "2030-01-01",
+    monthlyCents: 25000,
+    allocations: [{ accountId: savings.id, mode: "percent", value: 2500 }],
+  })
+  const share = (await call("GET", `/goals/${g.json.id}`)).json
+  assert.equal(share.currentCents, Math.round(savings.balanceCents! * 0.25))
+  assert.ok(share.neededMonthlyCents > 0)
+  // Goal contributions show in Budgets.
+  const budgets = (
+    await call("GET", `/budgets?month=${FIXTURE_TODAY.slice(0, 7)}`)
+  ).json
+  assert.ok(budgets.goals.some((x: { id: string }) => x.id === g.json.id))
   assert.equal((await call("DELETE", `/goals/${g.json.id}`)).status, 200)
   assert.equal((await call("GET", `/goals/${g.json.id}`)).status, 404)
 })
@@ -465,23 +548,34 @@ test("rollover carries unspent budget forward and history compares budget to act
     ).status,
     200
   )
-  const rows = (await call("GET", `/budgets?month=${month}`)).json.rows
+  const rows = (await call("GET", `/budgets?month=${month}`)).json.expenses
   const row = rows.find((r: { code: string }) => r.code === "entertainment")
-  const history = (
-    await call("GET", "/budgets/history?months=6&category=entertainment")
-  ).json.months as { month: string; budgetCents: number; spentCents: number }[]
-  const carry = history
-    .filter((h) => h.month >= since && h.month < month)
-    .reduce((s, h) => s + h.budgetCents - h.spentCents, 0)
+  const spent = new Map<string, number>()
+  for (const a of model.get().allocations)
+    if (
+      a.group === "expense" &&
+      !a.txn.pending &&
+      (a.category === "entertainment" || a.category === "cat_subscriptions")
+    )
+      spent.set(
+        a.txn.date.slice(0, 7),
+        (spent.get(a.txn.date.slice(0, 7)) ?? 0) - a.amountCents
+      )
+  let carry = 0
+  for (let mo = since; mo < month;) {
+    // Entertainment's budget includes Subscriptions inside it: 9000 + 3000.
+    carry += 12000 - (spent.get(mo) ?? 0)
+    const [y, n] = mo.split("-").map(Number)
+    mo = new Date(Date.UTC(y, n, 1)).toISOString().slice(0, 7)
+  }
   assert.equal(row.rollover, true)
   assert.equal(row.rolloverCents, carry)
+  const history = (await call("GET", "/budgets/history?months=6")).json.months
   assert.equal(history.length, 6)
-  // Entertainment's budget includes Subscriptions inside it: 9000 + 3000.
-  assert.ok(history.every((h) => h.budgetCents === 12000))
   await call("PUT", "/budgets/rollover/entertainment", { enabled: false })
-  const after = (await call("GET", `/budgets?month=${month}`)).json.rows.find(
-    (r: { code: string }) => r.code === "entertainment"
-  )
+  const after = (
+    await call("GET", `/budgets?month=${month}`)
+  ).json.expenses.find((r: { code: string }) => r.code === "entertainment")
   assert.equal(after.rolloverCents, 0)
   const total = (await call("GET", "/budgets/history?months=3")).json.months
   assert.ok(total.every((h: { budgetCents: number }) => h.budgetCents > 0))
@@ -507,9 +601,9 @@ test("a parent includes its children everywhere; grand totals count each dollar 
   assert.ok(food > coffee)
 
   // Cash flow: parent row includes the child; top-level rows add up to the month.
-  const cash = (await call("GET", `/cashflow?month=${month}`)).json
+  const cash = (await call("GET", `/cashflow?key=${month}`)).json
   const cashRow = (code: string) =>
-    cash.spending.find((r: { code: string }) => r.code === code)
+    cash.spending.find((r: { key: string }) => r.key === code)
   assert.equal(cashRow("food").cents, food)
   assert.equal(cashRow("cat_coffee").cents, coffee)
   const monthSpend = cash.months.at(-1).spendingCents
@@ -533,14 +627,14 @@ test("a parent includes its children everywhere; grand totals count each dollar 
   // Budgets: same Food spending; parent budget is own plus children; totals once.
   const budgets = (await call("GET", `/budgets?month=${month}`)).json
   const row = (code: string) =>
-    budgets.rows.find((r: { code: string }) => r.code === code)
+    budgets.expenses.find((r: { code: string }) => r.code === code)
   assert.equal(row("food").spentCents, food)
   assert.equal(row("cat_coffee").spentCents, coffee)
   assert.equal(
     row("food").totalBudgetCents,
     row("food").budgetCents + row("cat_coffee").budgetCents
   )
-  const ownBudgets = budgets.rows.reduce(
+  const ownBudgets = budgets.expenses.reduce(
     (s: number, r: { budgetCents: number | null }) => s + (r.budgetCents ?? 0),
     0
   )
@@ -549,6 +643,7 @@ test("a parent includes its children everywhere; grand totals count each dollar 
     budgets.totals.spentCents + budgets.totals.unbudgetedCents,
     monthSpend
   )
+  assert.equal(budgets.totals.totalSpentCents, monthSpend)
   // The dashboard card shows the same totals as the Budgets page.
   assert.equal(summary.budget.budgetedCents, budgets.totals.budgetedCents)
   assert.equal(summary.budget.spentCents, budgets.totals.spentCents)
@@ -573,28 +668,36 @@ test("reports cover the same full months on every tab and agree on totals", asyn
     const cats = (await call("GET", `/reports/categories?range=${range}`)).json
     const merchants = (await call("GET", `/reports/merchants?range=${range}`))
       .json
-    const trends = (await call("GET", `/reports/trends?range=${range}`)).json
+    const built = (
+      await call(
+        "GET",
+        `/reports/build?measure=spending&by=group&from=${cats.from}&to=${cats.to}`
+      )
+    ).json
     const n = { "1m": 1, "3m": 3, "6m": 6, "1y": 12 }[range]
     assert.equal(cats.months.length, n)
-    assert.deepEqual(trends.months, cats.months)
+    assert.deepEqual(
+      built.buckets.map((b: { key: string }) => b.key),
+      cats.months
+    )
     assert.ok(!cats.months.includes(current), "the month in progress is out")
     assert.equal(cats.from, `${cats.months[0]}-01`)
     assert.equal(merchants.from, cats.from)
     assert.equal(merchants.to, cats.to)
-    // Same spending total by category and by month.
-    const trendSpend = trends.rows.reduce(
-      (s: number, r: { spendingCents: number }) => s + r.spendingCents,
-      0
-    )
-    assert.equal(cats.totalCents, trendSpend)
-    // Stacked categories plus everything else equal each month's spending.
-    for (const r of trends.rows) {
-      const parts = trends.categories.reduce(
-        (s: number, c: { code: string }) => s + Number(r[c.code] ?? 0),
-        r.other
+    // Same spending total by category and in the builder, and the
+    // builder's series (top groups plus everything else) add up per month.
+    assert.equal(cats.totalCents, built.totalCents)
+    const flows = (await call("GET", "/cashflow?months=24")).json.months as {
+      month: string
+      spendingCents: number
+    }[]
+    built.buckets.forEach((b: { key: string }, i: number) => {
+      const sum = built.series.reduce(
+        (s: number, x: { values: number[] }) => s + x.values[i],
+        0
       )
-      assert.equal(parts, r.spendingCents)
-    }
+      assert.equal(sum, flows.find((f) => f.month === b.key)!.spendingCents)
+    })
     // A parent row includes its child, and its months add up to its total.
     const food = cats.rows.find((r: { code: string }) => r.code === "food")
     const coffee = cats.rows.find(

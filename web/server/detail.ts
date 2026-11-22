@@ -40,6 +40,35 @@ export type Txn = {
   transferPairId: string | null
   website: string | null
   paymentChannel: string | null
+  /** Kept by hand in the app database (v4), not from a feed. */
+  manual?: boolean
+}
+/** Buys, sells, dividends, contributions and fees (detail schema 2). */
+export type InvestmentTxn = {
+  id: string
+  accountId: string
+  securityId: string | null
+  date: string
+  type: string
+  subtype: string | null
+  quantity: number
+  price: number | null
+  /** Cash into the account is positive. */
+  amountCents: number
+  feesCents: number
+}
+/** Statement details for a card or loan (detail schema 2, opt-in). */
+export type Liability = {
+  accountId: string
+  kind: string
+  lastStatementBalanceCents: number | null
+  lastStatementDate: string | null
+  minimumPaymentCents: number | null
+  nextPaymentDueDate: string | null
+  lastPaymentCents: number | null
+  lastPaymentDate: string | null
+  aprPercent: number | null
+  isOverdue: boolean
 }
 export type Holding = {
   accountId: string
@@ -82,6 +111,8 @@ export type Detail = {
   }[]
   categories: OwnedCategory[]
   recurringHints: RecurringHint[]
+  investmentTransactions: InvestmentTxn[]
+  liabilities: Liability[]
   loadedAt: number
 }
 export type RecurringHint = {
@@ -249,14 +280,53 @@ export function loadDetail(path: string): Detail {
       parent: (r.parent as string) ?? null,
       sort: Number(r.sort ?? 0),
     }))
-    const hasHints = Boolean(
-      db
-        .prepare(
-          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='recurring_hints'"
-        )
-        .get()
-    )
-    const recurringHints = hasHints
+    const table = (name: string) =>
+      Boolean(
+        db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+          .get(name)
+      )
+    const investmentTransactions = table("investment_transactions")
+      ? (
+          db
+            .prepare(
+              "SELECT * FROM investment_transactions ORDER BY date DESC, id"
+            )
+            .all() as Record<string, unknown>[]
+        ).map((r): InvestmentTxn => ({
+          id: String(r.id),
+          accountId: String(r.account_id),
+          securityId: (r.security_id as string) ?? null,
+          date: String(r.date),
+          type: String(r.type ?? "other"),
+          subtype: (r.subtype as string) ?? null,
+          quantity: Number(r.quantity ?? 0),
+          price: (r.price as number) ?? null,
+          amountCents: Number(r.amount_cents ?? 0),
+          feesCents: Number(r.fees_cents ?? 0),
+        }))
+      : []
+    const liabilities = table("liabilities")
+      ? (
+          db.prepare("SELECT * FROM liabilities").all() as Record<
+            string,
+            unknown
+          >[]
+        ).map((r): Liability => ({
+          accountId: String(r.account_id),
+          kind: String(r.kind ?? "credit"),
+          lastStatementBalanceCents:
+            (r.last_statement_balance_cents as number) ?? null,
+          lastStatementDate: (r.last_statement_date as string) ?? null,
+          minimumPaymentCents: (r.minimum_payment_cents as number) ?? null,
+          nextPaymentDueDate: (r.next_payment_due_date as string) ?? null,
+          lastPaymentCents: (r.last_payment_cents as number) ?? null,
+          lastPaymentDate: (r.last_payment_date as string) ?? null,
+          aprPercent: (r.apr_percent as number) ?? null,
+          isOverdue: Boolean(r.is_overdue),
+        }))
+      : []
+    const recurringHints = table("recurring_hints")
       ? (
           db.prepare("SELECT * FROM recurring_hints").all() as Record<
             string,
@@ -283,6 +353,8 @@ export function loadDetail(path: string): Detail {
       holdings,
       holdingHistory,
       categories,
+      investmentTransactions,
+      liabilities,
       loadedAt: Date.now(),
     }
   } finally {

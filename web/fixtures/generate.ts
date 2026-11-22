@@ -53,7 +53,7 @@ const CATEGORIES: [string, string, "income" | "expense" | "transfer"][] = [
   ["loan_payments", "Loan payments", "expense"],
   ["bank_transfer", "Bank transfers and card payments", "transfer"],
   ["internal_transfer", "Matched internal transfers", "transfer"],
-  ["peer_payment", "Peer payments", "transfer"],
+  ["peer_payment", "Peer payments", "expense"],
   ["other", "Other or unclassified", "expense"],
 ]
 
@@ -608,6 +608,17 @@ export function generate(outDir: string) {
     cents: number
     cost: number
   }[] = []
+  const investTxns: {
+    id: string
+    account: string
+    security: string | null
+    date: string
+    type: string
+    subtype: string
+    quantity: number
+    price: number | null
+    cents: number
+  }[] = []
   const investTotals = new Map<string, Map<string, number>>()
   for (const s of SECURITIES) {
     let value = s.start
@@ -627,7 +638,47 @@ export function generate(outDir: string) {
         value += contribution
         quantity += contribution / price
         cost += contribution
+        // Cash arrives, then buys the fund: cash into the account is positive.
+        investTxns.push({
+          id: `itx_${hash(`fixture-contribution-${s.id}-${date}`).slice(0, 40)}`,
+          account: acct(s.account),
+          security: null,
+          date,
+          type: "cash",
+          subtype: "contribution",
+          quantity: 0,
+          price: null,
+          cents: Math.round(contribution),
+        })
+        investTxns.push({
+          id: `itx_${hash(`fixture-buy-${s.id}-${date}`).slice(0, 40)}`,
+          account: acct(s.account),
+          security: s.id,
+          date,
+          type: "buy",
+          subtype: "buy",
+          quantity: Math.round((contribution / price) * 1000) / 1000,
+          price: Math.round(price) / 100,
+          cents: -Math.round(contribution),
+        })
       }
+      if (
+        s.id === "sec_total" &&
+        [3, 6, 9, 12].includes(new Date(day).getUTCMonth() + 1) &&
+        new Date(day).getUTCDate() > 21 &&
+        new Date(day).getUTCDate() <= 28
+      )
+        investTxns.push({
+          id: `itx_${hash(`fixture-dividend-${s.id}-${date}`).slice(0, 40)}`,
+          account: acct(s.account),
+          security: s.id,
+          date,
+          type: "cash",
+          subtype: "dividend",
+          quantity: 0,
+          price: null,
+          cents: Math.round(value * 0.0035),
+        })
       holdingHistory.push({
         account: acct(s.account),
         security: s.id,
@@ -671,9 +722,11 @@ export function generate(outDir: string) {
     CREATE TABLE holding_history(account_id TEXT,security_id TEXT,date TEXT,quantity REAL,value_cents INTEGER,PRIMARY KEY(account_id,security_id,date));
     CREATE TABLE categories(code TEXT PRIMARY KEY,label TEXT,"group" TEXT,parent TEXT,sort INTEGER);
     CREATE TABLE recurring_hints(source_id TEXT,merchant TEXT,currency TEXT,frequency TEXT,last_charged_month TEXT,active INTEGER);
+    CREATE TABLE investment_transactions(id TEXT PRIMARY KEY,account_id TEXT,security_id TEXT,date TEXT,type TEXT,subtype TEXT,quantity REAL,price REAL,amount_cents INTEGER,fees_cents INTEGER);
+    CREATE TABLE liabilities(account_id TEXT PRIMARY KEY,kind TEXT,last_statement_balance_cents INTEGER,last_statement_date TEXT,minimum_payment_cents INTEGER,next_payment_due_date TEXT,last_payment_cents INTEGER,last_payment_date TEXT,apr_percent REAL,is_overdue INTEGER);
   `)
   db.exec("BEGIN")
-  db.prepare("INSERT INTO meta VALUES(?,?)").run("schema_version", "1")
+  db.prepare("INSERT INTO meta VALUES(?,?)").run("schema_version", "2")
   db.prepare("INSERT INTO meta VALUES(?,?)").run(
     "generated_at",
     `${FIXTURE_TODAY}T12:00:00+00:00`
@@ -782,6 +835,46 @@ export function generate(outDir: string) {
     "2026-03",
     1
   )
+  for (const t of investTxns)
+    db.prepare(
+      "INSERT INTO investment_transactions VALUES(?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      t.id,
+      t.account,
+      t.security,
+      t.date,
+      t.type,
+      t.subtype,
+      t.quantity,
+      t.price,
+      t.cents,
+      0
+    )
+  // Statements for the two cards: one paid, one due soon.
+  db.prepare("INSERT INTO liabilities VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+    acct("card"),
+    "credit",
+    Math.round(current.card * 0.8),
+    "2026-11-05",
+    3500,
+    "2026-12-02",
+    Math.round(current.card * 0.75),
+    "2026-11-12",
+    24.49,
+    0
+  )
+  db.prepare("INSERT INTO liabilities VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+    acct("travel"),
+    "credit",
+    Math.round(current.travel * 0.9),
+    "2026-10-28",
+    2500,
+    "2026-11-24",
+    40000,
+    "2026-10-20",
+    21.99,
+    0
+  )
   db.exec("COMMIT")
   db.close()
 
@@ -799,11 +892,6 @@ export function generate(outDir: string) {
       .run(code, label, grp, parent)
   cat("cat_coffee", "Coffee shops", "food")
   cat("cat_subscriptions", "Subscriptions", "entertainment")
-  app
-    .prepare(
-      "INSERT INTO categories(code,label,grp,parent,hidden,sort) VALUES('bank_transfer','Transfers and card payments','transfer',NULL,0,NULL)"
-    )
-    .run()
   const tag = (id: string, name: string, hue: string) =>
     app.prepare("INSERT INTO tags VALUES(?,?,?)").run(id, name, hue)
   tag("tag_tax", "Tax deductible", "gr")
@@ -865,12 +953,14 @@ export function generate(outDir: string) {
     { tags: ["tag_shared"] },
     0
   )
-  // Older activity has been reviewed; the last ten days wait in the queue.
+  // Review started on 1 October; everything up to ten days ago is done,
+  // and the last ten days wait in the queue.
   const review = app.prepare(
     "INSERT INTO txn_overrides(txn_id,reviewed,updated_at) VALUES(?,1,?)"
   )
   for (const t of txns)
-    if (t.date < addDays(FIXTURE_TODAY, -10)) review.run(t.id, at)
+    if (t.date >= "2026-10-01" && t.date < addDays(FIXTURE_TODAY, -10))
+      review.run(t.id, at)
   const shop = txns.findLast(
     (t) =>
       t.merchant === "Online Example Market" && !t.pending && t.cents < -8000
@@ -892,8 +982,10 @@ export function generate(outDir: string) {
   )
   if (dinner) {
     app
-      .prepare("UPDATE txn_overrides SET note=? WHERE txn_id=?")
-      .run("Birthday dinner, split with a friend", dinner.id)
+      .prepare(
+        "INSERT INTO txn_overrides(txn_id,note,updated_at) VALUES(?,?,?) ON CONFLICT(txn_id) DO UPDATE SET note=excluded.note"
+      )
+      .run(dinner.id, "Birthday dinner, split with a friend", at)
     app
       .prepare("INSERT OR IGNORE INTO txn_tags VALUES(?,?)")
       .run(dinner.id, "tag_reimburse")
@@ -927,32 +1019,126 @@ export function generate(outDir: string) {
     kind: string,
     target: number,
     date: string | null,
-    accounts: string[]
+    accounts: string[],
+    monthly: number | null = null,
+    shares: Record<string, [string, number | null]> = {}
   ) => {
     app
       .prepare(
-        "INSERT INTO goals(id,name,kind,target_cents,target_date,account_ids_json,created_at) VALUES(?,?,?,?,?,?,?)"
+        "INSERT INTO goals(id,name,kind,target_cents,target_date,account_ids_json,created_at,monthly_cents) VALUES(?,?,?,?,?,?,?,?)"
       )
-      .run(id, name, kind, target, date, JSON.stringify(accounts.map(acct)), at)
+      .run(
+        id,
+        name,
+        kind,
+        target,
+        date,
+        JSON.stringify(accounts.map(acct)),
+        at,
+        monthly
+      )
     for (const a of accounts)
       app
-        .prepare("INSERT INTO goal_allocations VALUES(?,?,'all',NULL)")
-        .run(id, acct(a))
+        .prepare("INSERT INTO goal_allocations VALUES(?,?,?,?)")
+        .run(id, acct(a), shares[a]?.[0] ?? "all", shares[a]?.[1] ?? null)
   }
-  goal("goal_emergency", "Emergency fund", "save", 4000000, "2027-06-30", [
-    "savings",
-  ])
-  goal("goal_car", "Pay off the car", "payoff", 1850000, "2028-03-31", ["loan"])
-  goal("goal_home", "Home down payment", "save", 9000000, "2030-12-31", [
-    "savings",
-    "brokerage",
-  ])
+  goal(
+    "goal_emergency",
+    "Emergency fund",
+    "save",
+    2500000,
+    "2027-06-30",
+    ["savings"],
+    50000,
+    { savings: ["amount", 1500000] }
+  )
+  goal(
+    "goal_car",
+    "Pay off the car",
+    "payoff",
+    1850000,
+    "2028-03-31",
+    ["loan"],
+    45000
+  )
+  goal(
+    "goal_home",
+    "Home down payment",
+    "save",
+    9000000,
+    "2030-12-31",
+    ["brokerage"],
+    100000,
+    { brokerage: ["percent", 4000] }
+  )
   app
     .prepare("INSERT INTO recurring_overrides VALUES(?,?,?,?)")
     .run("ironwood example gym", "cancelled", null, null)
   app
     .prepare("INSERT INTO account_overrides VALUES(?,?,?,?)")
     .run(acct("oldchecking"), null, 1, 1)
+  // Accounts kept by hand: a home and a car valued now and then, and cash.
+  const manual = (id: string, name: string, type: string) =>
+    app
+      .prepare(
+        "INSERT INTO manual_accounts(id,name,type,currency,created_at) VALUES(?,?,?,'USD',?)"
+      )
+      .run(id, name, type, at)
+  const stated = (id: string, date: string, cents: number) =>
+    app
+      .prepare("INSERT INTO manual_balances VALUES(?,?,?)")
+      .run(id, date, cents)
+  manual("macct_home", "Home", "property")
+  manual("macct_car", "Car", "vehicle")
+  manual("macct_cash", "Cash", "cash")
+  ;[
+    ["2025-01-15", 41000000],
+    ["2025-06-15", 41800000],
+    ["2026-01-15", 42500000],
+    ["2026-07-15", 43300000],
+  ].forEach(([d, c]) => stated("macct_home", d as string, c as number))
+  ;[
+    ["2025-01-15", 2400000],
+    ["2026-01-15", 2050000],
+    ["2026-09-01", 1880000],
+  ].forEach(([d, c]) => stated("macct_car", d as string, c as number))
+  stated("macct_cash", "2026-09-30", 24000)
+  const cash = (
+    id: string,
+    date: string,
+    cents: number,
+    merchant: string,
+    category: string
+  ) => {
+    app
+      .prepare("INSERT INTO manual_txns VALUES(?,?,?,?,?,?,?)")
+      .run(id, "macct_cash", date, cents, merchant, category, at)
+    app
+      .prepare(
+        "INSERT INTO txn_overrides(txn_id,reviewed,updated_at) VALUES(?,1,?)"
+      )
+      .run(id, at)
+  }
+  cash("mtxn_market1", "2026-10-11", -2350, "Saturday Example Market", "food")
+  cash(
+    "mtxn_haircut",
+    "2026-10-24",
+    -3000,
+    "Corner Example Barber",
+    "personal_care"
+  )
+  cash("mtxn_market2", "2026-11-08", -1875, "Saturday Example Market", "food")
+  cash("mtxn_tip", "2026-11-14", -1000, "Valet tip", "transport")
+  // Review starts at the beginning of October.
+  app
+    .prepare("INSERT OR REPLACE INTO settings VALUES('reviewSince',?)")
+    .run(JSON.stringify("2026-10-01"))
+  app
+    .prepare("INSERT INTO budget_plans VALUES('income','0001-01',?)")
+    .run(880000)
+  app
+    .prepare("INSERT INTO saved_views VALUES('view_big','Large purchases',?,0)")
+    .run(JSON.stringify({ direction: "out", min: "20000" }))
   app.exec("COMMIT")
   app.close()
   return { detailPath, appPath, transactions: txns.length }

@@ -102,17 +102,18 @@ export function migrate(db: DatabaseSync) {
       throw new Error(
         `App database schema ${current} is newer than this app (${SCHEMA_VERSION})`
       )
-    if (current < 2) db.exec(V2)
+    // Every CREATE is IF NOT EXISTS, so a partial older file fills in.
+    db.exec(V2)
     // v3: a person can correct a transaction's date.
     addColumn(db, "txn_overrides", "date", "TEXT")
+    db.exec(V4)
+    addColumn(db, "categories", "icon", "TEXT")
+    addColumn(db, "categories", "color", "TEXT")
+    addColumn(db, "categories", "merged_into", "TEXT")
+    addColumn(db, "categories", "budget_kind", "TEXT")
+    addColumn(db, "rules", "applies_from", "TEXT")
+    addColumn(db, "goals", "monthly_cents", "INTEGER")
     if (current < 4) {
-      db.exec(V4)
-      addColumn(db, "categories", "icon", "TEXT")
-      addColumn(db, "categories", "color", "TEXT")
-      addColumn(db, "categories", "merged_into", "TEXT")
-      addColumn(db, "categories", "budget_kind", "TEXT")
-      addColumn(db, "rules", "applies_from", "TEXT")
-      addColumn(db, "goals", "monthly_cents", "INTEGER")
       // Defaults become plans that start before any data; each goal's
       // accounts count in full, as before.
       db.exec(`INSERT OR IGNORE INTO budget_plans(category, from_month, amount_cents)
