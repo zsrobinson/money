@@ -34,7 +34,7 @@ def test_rules_are_first_field_wins_snapshot_based_and_overrides_win():
     txn={'category':'food','merchant':'  Invented  SHOP ','description':None,'account_id':'acct_fixture','amount_cents':-500}
     rules=[({'merchant_contains':'invented shop'},{'category':'shopping'}),({'category':'shopping'},{'hide':True}),({'category':'food'},{'category':'housing','mark_reviewed':True})]
     result=evaluate(txn,rules,{'category':'travel','hidden':0})
-    assert result=={'category':'travel','merchant':txn['merchant'],'hidden':0,'reviewed':True}
+    assert result=={'category':'travel','merchant':txn['merchant'],'hidden':0,'reviewed':True,'split':None}
 
 
 def test_overrides_change_aggregate_without_disclosing_edits(snapshot,tmp_path,monkeypatch):
