@@ -88,7 +88,10 @@ import type { Split, TxnDetail } from "@/lib/types"
 export const Route = createFileRoute("/transactions/$id")({
   validateSearch: z.object({
     /** The list this was opened from, to step through it. */
-    list: z.string().optional(),
+    list: z
+      .record(z.string(), z.union([z.string(), z.number()]))
+      .optional()
+      .catch(undefined),
   }),
   staticData: { crumbs: [{ label: "Transactions", to: "/transactions" }] },
   component: TransactionPage,
@@ -156,23 +159,12 @@ function SaveState({
 /** The list to step through: where this was opened from, or the review queue. */
 function useQueue(t: TxnDetail) {
   const { list } = Route.useSearch()
-  const params = (() => {
-    if (list)
-      try {
-        return JSON.parse(list) as Record<string, string | number>
-      } catch {
-        /* fall through */
-      }
-    return t.needsReview ? { status: "unreviewed" } : null
-  })()
+  const params = list ?? (t.needsReview ? { status: "unreviewed" } : null)
   const n = useQuery({
     ...neighborsQuery(t.id, params ?? {}),
     enabled: Boolean(params),
   })
-  return {
-    list: list ?? (params ? JSON.stringify(params) : undefined),
-    n: n.data,
-  }
+  return { list: params ?? undefined, n: n.data }
 }
 
 function TransactionView({ t }: { t: TxnDetail }) {

@@ -327,7 +327,7 @@ function Dashboard() {
                     grouped={false}
                     editable
                     linkSearch={{
-                      list: JSON.stringify({ status: "unreviewed" }),
+                      list: { status: "unreviewed" },
                     }}
                   />
                 </SectionCard>

@@ -178,7 +178,11 @@ function Transactions() {
   )
   const page = s.page ?? 1
   const filters = txnFilters(s)
-  const listParams = { ...filters, sort: s.sort, order: s.order }
+  const listParams = Object.fromEntries(
+    Object.entries({ ...filters, sort: s.sort, order: s.order }).filter(
+      ([, v]) => v !== undefined
+    )
+  ) as Record<string, string | number>
   const list = useQuery(
     transactionsQuery({
       ...listParams,
@@ -286,7 +290,7 @@ function Transactions() {
         void navigate({
           to: "/transactions/$id",
           params: { id: current.id },
-          search: { list: JSON.stringify(listParams) },
+          search: { list: listParams },
         })
       else if (e.key === "r")
         review.mutate({ id: current.id, reviewed: !current.reviewed })
@@ -749,7 +753,7 @@ function Transactions() {
             activeId={active}
             pickerFor={pickerFor}
             onPickerChange={setPickerFor}
-            linkSearch={{ list: JSON.stringify(listParams) }}
+            linkSearch={{ list: listParams }}
           />
         ) : reviewing ? (
           <EmptyState title="All caught up">
