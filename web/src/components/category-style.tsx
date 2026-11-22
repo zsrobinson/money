@@ -107,13 +107,20 @@ export const CATEGORY_COLORS = [
   "blue-soft",
   "purple-soft",
   "magenta-soft",
+  "gray",
 ] as const
 
-/** A CSS colour for a stored colour key; unknown keys are neutral. */
-export const categoryColor = (key: string | null | undefined) =>
-  key && (CATEGORY_COLORS as readonly string[]).includes(key)
+/**
+ * A CSS colour for a stored colour key; unknown keys are neutral. A child
+ * category's "parent/tint" is its parent's colour mixed toward the card.
+ */
+export const categoryColor = (key: string | null | undefined): string => {
+  if (key?.endsWith("/tint"))
+    return `color-mix(in oklab, ${categoryColor(key.slice(0, -5))} 55%, var(--card))`
+  return key && (CATEGORY_COLORS as readonly string[]).includes(key)
     ? `var(--cat-${key})`
     : "var(--cat-none)"
+}
 
 /** A category's icon on a tint of its colour. */
 export function CategoryIcon({

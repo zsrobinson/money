@@ -516,7 +516,7 @@ test("cash flow: periods, breakdowns and a balanced Sankey", async () => {
       s.links
         .filter((l: { source: string }) => l.source === id)
         .reduce((a: number, l: { value: number }) => a + l.value, 0)
-    assert.equal(into("income"), out("income"))
+    assert.equal(into("hub"), out("hub"))
     // Saved in the chart is the period's income less spending.
     const saved = s.links.find((l: { target: string }) => l.target === "saved")
     if (q.netCents > 0) assert.equal(saved.value, q.netCents)
@@ -594,4 +594,19 @@ test("settings keep each valid value when another is bad", async () => {
   assert.equal(s.reviewSince, "2026-10-01")
   db.prepare("DELETE FROM settings WHERE key='weekStartsOn'").run()
   model.invalidate()
+})
+
+test("top-level categories hold distinct colours; children are tints of their parent", async () => {
+  const list = (await call("GET", "/categories")).json as {
+    code: string
+    parent: string | null
+    color: string
+  }[]
+  const tops = list.filter((c) => !c.parent)
+  assert.equal(new Set(tops.map((c) => c.color)).size, tops.length)
+  for (const c of list.filter((c) => c.parent))
+    assert.equal(
+      c.color,
+      `${list.find((p) => p.code === c.parent)!.color}/tint`
+    )
 })

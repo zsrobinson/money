@@ -126,24 +126,29 @@ export const CATEGORY_COLORS = [
   "blue-soft",
   "purple-soft",
   "magenta-soft",
+  "gray",
 ] as const
+/** Built-in top-level categories each hold their own palette slot. */
 const BUILT_IN_STYLE: Record<string, { icon: string; color: string }> = {
   food: { icon: "utensils", color: "orange" },
   transport: { icon: "car", color: "blue" },
   shopping: { icon: "shopping-bag", color: "magenta" },
   travel: { icon: "plane", color: "cyan" },
-  personal_care: { icon: "sparkles", color: "purple-soft" },
+  personal_care: { icon: "sparkles", color: "magenta-soft" },
   housing: { icon: "house", color: "yellow" },
   health: { icon: "heart-pulse", color: "red" },
   entertainment: { icon: "clapperboard", color: "purple" },
   income: { icon: "banknote", color: "green" },
   fees: { icon: "receipt", color: "red-soft" },
-  loan_payments: { icon: "landmark", color: "blue-soft" },
-  bank_transfer: { icon: "arrow-left-right", color: "cyan-soft" },
-  internal_transfer: { icon: "repeat", color: "cyan-soft" },
-  peer_payment: { icon: "users", color: "magenta-soft" },
-  other: { icon: "circle-dashed", color: "orange-soft" },
+  loan_payments: { icon: "landmark", color: "cyan-soft" },
+  bank_transfer: { icon: "arrow-left-right", color: "green-soft" },
+  internal_transfer: { icon: "repeat", color: "blue-soft" },
+  peer_payment: { icon: "users", color: "purple-soft" },
+  other: { icon: "circle-dashed", color: "gray" },
 }
+export const BUILT_IN_COLORS = Object.fromEntries(
+  Object.entries(BUILT_IN_STYLE).map(([k, v]) => [k, v.color])
+)
 /** Shorter names where the built-in one truncates in lists. */
 const SHORT_LABELS: Record<string, string> = {
   bank_transfer: "Transfers",
@@ -231,7 +236,7 @@ export function loadRules(db: AppDb): Rule[] {
 }
 
 function buildCategories(detail: Detail, db: AppDb) {
-  const rows = db.prepare("SELECT * FROM categories").all() as {
+  const rows = db.prepare("SELECT * FROM categories ORDER BY rowid").all() as {
     code: string
     label: string
     grp: Group
@@ -274,7 +279,13 @@ function buildCategories(detail: Detail, db: AppDb) {
   })
   const byCode = new Map(list.map((c) => [c.code, c]))
   const custom = rows.filter((r) => !owned.has(r.code))
-  // Custom top-level rows first, so their children can find them.
+  // Custom top-level rows first, so their children can find them. Without
+  // a colour of their own they take the first slot no other top-level
+  // category holds, in creation order.
+  const taken = new Set(list.map((c) => c.color))
+  const nextSlot = () =>
+    CATEGORY_COLORS.find((c) => !taken.has(c)) ??
+    CATEGORY_COLORS[taken.size % CATEGORY_COLORS.length]
   for (const r of custom.filter((r) => !r.parent)) {
     const group: Group = ["income", "expense", "transfer"].includes(r.grp)
       ? r.grp
@@ -290,11 +301,11 @@ function buildCategories(detail: Detail, db: AppDb) {
       hidden: Boolean(r.hidden),
       sort: r.sort ?? 900,
       icon: r.icon || "folder",
-      color:
-        r.color || CATEGORY_COLORS[hashIndex(r.code, CATEGORY_COLORS.length)],
+      color: r.color || nextSlot(),
       mergedInto: null,
       budgetKind: kind(r.budget_kind),
     }
+    taken.add(info.color)
     list.push(info)
     byCode.set(r.code, info)
   }
@@ -313,8 +324,8 @@ function buildCategories(detail: Detail, db: AppDb) {
       hidden: Boolean(r.hidden),
       sort: r.sort ?? parent.sort + 0.5,
       icon: r.icon || parent.icon,
-      color:
-        r.color || CATEGORY_COLORS[hashIndex(r.code, CATEGORY_COLORS.length)],
+      // A tint of its parent's colour, so the family reads together.
+      color: r.color || `${parent.color}/tint`,
       mergedInto: null,
       budgetKind: kind(r.budget_kind ?? parent.budgetKind),
     }
@@ -608,6 +619,8 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
         !reviewed &&
         !hidden &&
         !t.pending &&
+        // A matched transfer between your own accounts needs no review.
+        !t.transferPairId &&
         (!review.since || date >= review.since),
       markedRecurring: r.recurring ?? false,
       note: o?.note ?? null,

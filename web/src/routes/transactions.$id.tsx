@@ -35,7 +35,6 @@ import {
 import { Input } from "@zsrobinson/shell/ui/input"
 import { Kbd } from "@zsrobinson/shell/ui/kbd"
 import { Textarea } from "@zsrobinson/shell/ui/textarea"
-import { Toggle } from "@zsrobinson/shell/ui/toggle"
 import {
   ArrowLeftRightIcon,
   CheckIcon,
@@ -53,6 +52,8 @@ import {
 } from "lucide-react"
 import { z } from "zod"
 import { CategoryPicker } from "@/components/category-picker"
+import { CategoryDot, useCategories } from "@/components/category-style"
+import { TagEditor } from "@/components/tag-editor"
 import {
   Amount,
   CardLink,
@@ -80,7 +81,6 @@ import { useSend } from "@/lib/mutations"
 import {
   categoriesQuery,
   neighborsQuery,
-  tagsQuery,
   transactionQuery,
 } from "@/lib/queries"
 import type { Split, TxnDetail } from "@/lib/types"
@@ -169,8 +169,8 @@ function useQueue(t: TxnDetail) {
 
 function TransactionView({ t }: { t: TxnDetail }) {
   const categories = useQuery(categoriesQuery)
-  const tags = useQuery(tagsQuery)
   const label = useCategoryLabels()
+  const cats = useCategories()
   const navigate = useNavigate()
   const { list, n } = useQueue(t)
   const go = (id: string | null | undefined) =>
@@ -265,9 +265,10 @@ function TransactionView({ t }: { t: TxnDetail }) {
     return () => window.removeEventListener("keydown", onKey)
   })
   return (
-    <Page>
+    <Page className={n && n.total > 0 ? "max-md:pb-24" : undefined}>
       {n && n.total > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-3xl bg-card px-2 py-1.5 text-sm ring-1 ring-foreground/5 dark:ring-foreground/10">
+        // On a phone the review bar sits at the bottom, under the thumb.
+        <div className="flex flex-wrap items-center gap-2 rounded-3xl bg-card px-2 py-1.5 text-sm shadow-sm ring-1 ring-foreground/5 max-md:fixed max-md:inset-x-3 max-md:bottom-3 max-md:z-30 max-md:shadow-lg dark:ring-foreground/10">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -358,6 +359,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
           <Button
             size="sm"
             variant="outline"
+            className="max-sm:hidden"
             disabled={patch.isPending}
             onClick={() => patch.mutate({ hidden: !t.hidden })}
           >
@@ -366,9 +368,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
             ) : (
               <EyeOffIcon data-icon="inline-start" />
             )}
-            <span className="max-sm:sr-only">
-              {t.hidden ? "Show in totals" : "Hide from totals"}
-            </span>
+            {t.hidden ? "Show in totals" : "Hide from totals"}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -383,6 +383,13 @@ function TransactionView({ t }: { t: TxnDetail }) {
               <EllipsisIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem
+                className="sm:hidden"
+                onClick={() => patch.mutate({ hidden: !t.hidden })}
+              >
+                {t.hidden ? <EyeIcon /> : <EyeOffIcon />}
+                {t.hidden ? "Show in totals" : "Hide from totals"}
+              </DropdownMenuItem>
               {t.merchantKey &&
               group !== "transfer" &&
               t.flowKind !== "peer_payment" ? (
@@ -687,36 +694,10 @@ function TransactionView({ t }: { t: TxnDetail }) {
               </Field>
               <Field>
                 <FieldLabel>Tags</FieldLabel>
-                <div className="flex flex-wrap gap-1.5">
-                  {(tags.data ?? []).map((tag) => (
-                    <Toggle
-                      key={tag.id}
-                      size="sm"
-                      variant="outline"
-                      pressed={t.tags.includes(tag.id)}
-                      onPressedChange={(next) =>
-                        patch.mutate({
-                          tags: next
-                            ? [...t.tags, tag.id]
-                            : t.tags.filter((x) => x !== tag.id),
-                        })
-                      }
-                    >
-                      {tag.name}
-                    </Toggle>
-                  ))}
-                  {!tags.data?.length ? (
-                    <span className="text-sm text-muted-foreground">
-                      No tags yet.{" "}
-                      <Link
-                        to="/categories"
-                        className="underline underline-offset-4"
-                      >
-                        Create tags
-                      </Link>
-                    </span>
-                  ) : null}
-                </div>
+                <TagEditor
+                  value={t.tags}
+                  onChange={(next) => patch.mutate({ tags: next })}
+                />
               </Field>
             </FieldGroup>
           </SectionCard>
@@ -823,7 +804,32 @@ function TransactionView({ t }: { t: TxnDetail }) {
             </CardLink>
           }
         >
-          <TxnRows items={t.similar} showAccount={false} grouped={false} />
+          <ul className="flex flex-col divide-y divide-border/70">
+            {t.similar.map((x) => (
+              <li key={x.id}>
+                <Link
+                  to="/transactions/$id"
+                  params={{ id: x.id }}
+                  className="grid min-h-11 grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2 text-sm outline-none hover:bg-muted/60 focus-visible:bg-muted"
+                >
+                  <span className="text-muted-foreground tabular-nums">
+                    {shortDate(x.date)}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                    <CategoryDot color={cats.get(x.category)?.color} />
+                    <span className="truncate">
+                      {x.split ? "Split" : label(x.category)}
+                    </span>
+                  </span>
+                  <Amount
+                    cents={x.amountCents}
+                    currency={x.currency}
+                    className="text-right font-medium"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </SectionCard>
       ) : null}
     </Page>

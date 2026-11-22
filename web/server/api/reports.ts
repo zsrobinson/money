@@ -54,7 +54,9 @@ function labelOf(
   m: Computed,
   by: GroupBy,
   key: string,
-  names: Map<string, string>
+  names: Map<string, string>,
+  /** A merchant's largest top-level category, for its colour. */
+  main?: Map<string, string>
 ) {
   if (by === "category" || by === "group") {
     const c = m.category(key)
@@ -84,7 +86,7 @@ function labelOf(
   if (by === "merchant")
     return {
       label: names.get(key) ?? "Unknown merchant",
-      color: null,
+      color: main?.get(key) ? m.category(main.get(key)!).color : null,
       icon: null,
       parent: null,
     }
@@ -123,11 +125,18 @@ export function totalsBy(
 ) {
   const totals = new Map<string, { cents: number; count: number }>()
   const names = new Map<string, string>()
+  const byCategory = new Map<string, Map<string, number>>()
   for (const a of m.allocations) {
     if (a.txn.date < from || a.txn.date > to || !keep(a)) continue
     const v = measureOf(a, measure)
     if (v === undefined) continue
     for (const k of keysOf(m, a, by)) {
+      if (by === "merchant") {
+        const top = m.category(a.category).parent ?? a.category
+        const per = byCategory.get(k) ?? new Map<string, number>()
+        per.set(top, (per.get(top) ?? 0) + Math.abs(v))
+        byCategory.set(k, per)
+      }
       const t = totals.get(k) ?? { cents: 0, count: 0 }
       t.cents += v
       t.count++
@@ -139,7 +148,13 @@ export function totalsBy(
         )
     }
   }
-  return { totals, names }
+  const main = new Map(
+    [...byCategory].map(([k, per]) => [
+      k,
+      [...per].sort((a, b) => b[1] - a[1])[0][0],
+    ])
+  )
+  return { totals, names, main }
 }
 
 /**
@@ -154,78 +169,83 @@ function sankey(m: Computed, from: string, to: string) {
       .map(([k, v]) => [k, Math.max(0, v.cents)] as const)
       .filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1])
-  const fold = (xs: (readonly [string, number])[], keep: number) =>
-    xs.length <= keep + 1
-      ? xs
-      : [
-          ...xs.slice(0, keep),
-          ["other", xs.slice(keep).reduce((s, x) => s + x[1], 0)] as const,
-        ]
-  const ins = fold(pos(sources), 5)
-  const outs = fold(pos(groups), 8)
-  // A group where more came back than went out (friends paying you back)
-  // flows in, so Saved matches income less spending.
-  const back = [...groups]
+  /**
+   * Keep the largest, and fold the rest (and anything under 3% of the
+   * total, too thin to label) into one "Other (n)" node.
+   */
+  const fold = (xs: (readonly [string, number])[], keep: number) => {
+    const total = xs.reduce((s, x) => s + x[1], 0)
+    const big = xs.filter((x, i) => i < keep && x[1] >= total * 0.03)
+    const rest = xs.slice(big.length)
+    if (rest.length <= 1 && big.length + rest.length <= keep + 1)
+      return { kept: xs, folded: 0 }
+    return {
+      kept: [...big, ["other", rest.reduce((s, x) => s + x[1], 0)] as const],
+      folded: rest.length,
+    }
+  }
+  const ins = fold(pos(sources), 4)
+  const outs = fold(pos(groups), 7)
+  // Groups where more came back than went out (friends paying you back)
+  // flow in as refunds, so Saved is exactly income less spending.
+  const refunds = [...groups]
     .filter(([, v]) => v.cents < 0)
-    .map(([k, v]) => [k, -v.cents] as const)
-  const income =
-    ins.reduce((s, x) => s + x[1], 0) + back.reduce((s, x) => s + x[1], 0)
-  const spending = outs.reduce((s, x) => s + x[1], 0)
-  const nodes: {
-    id: string
-    label: string
-    color: string | null
-    column: number
-  }[] = []
+    .reduce((s, [, v]) => s - v.cents, 0)
+  const earned = ins.kept.reduce((s, x) => s + x[1], 0)
+  const income = earned + refunds
+  const spending = outs.kept.reduce((s, x) => s + x[1], 0)
+  const overspent = spending > income
+  const nodes: { id: string; label: string; color: string | null }[] = []
   const links: { source: string; target: string; value: number }[] = []
-  for (const [k, v] of ins) {
+  // The middle node is the money to spend: income, or when spending ran
+  // past it, the spending itself with savings drawn in.
+  const hub = overspent ? "Spending" : "Income"
+  for (const [k, v] of ins.kept) {
     nodes.push({
       id: `in:${k}`,
-      label: k === "other" ? "Other income" : (names.get(k) ?? "Income"),
+      label:
+        k === "other"
+          ? `Other income (${ins.folded})`
+          : (names.get(k) ?? "Income"),
       color: "green",
-      column: 0,
     })
-    links.push({ source: `in:${k}`, target: "income", value: v })
+    links.push({ source: `in:${k}`, target: "hub", value: v })
   }
-  for (const [k, v] of back) {
-    const c = m.category(k)
-    nodes.push({ id: `back:${k}`, label: c.label, color: c.color, column: 0 })
-    links.push({ source: `back:${k}`, target: "income", value: v })
+  if (refunds > 0) {
+    nodes.push({ id: "in:refunds", label: "Refunds", color: "green-soft" })
+    links.push({ source: "in:refunds", target: "hub", value: refunds })
   }
-  if (spending > income) {
-    nodes.push({
-      id: "in:savings",
-      label: "From savings",
-      color: null,
-      column: 0,
-    })
+  if (overspent) {
+    nodes.push({ id: "in:savings", label: "From savings", color: null })
     links.push({
       source: "in:savings",
-      target: "income",
+      target: "hub",
       value: spending - income,
     })
   }
-  nodes.push({
-    id: "income",
-    label: spending > income ? "Income and savings" : "Income",
-    color: "green",
-    column: 1,
-  })
-  for (const [k, v] of outs) {
+  // Uncoloured, so each ribbon out takes its category's colour.
+  nodes.push({ id: "hub", label: hub, color: null })
+  for (const [k, v] of outs.kept) {
     const c = k === "other" ? null : m.category(k)
     nodes.push({
       id: `out:${k}`,
-      label: c?.label ?? "Other spending",
+      label: c?.label ?? `Other (${outs.folded})`,
       color: c?.color ?? null,
-      column: 2,
     })
-    links.push({ source: "income", target: `out:${k}`, value: v })
+    links.push({ source: "hub", target: `out:${k}`, value: v })
   }
-  if (income > spending) {
-    nodes.push({ id: "saved", label: "Saved", color: "positive", column: 2 })
-    links.push({ source: "income", target: "saved", value: income - spending })
+  if (!overspent && income > spending) {
+    nodes.push({ id: "saved", label: "Saved", color: "positive" })
+    links.push({ source: "hub", target: "saved", value: income - spending })
   }
-  return { nodes, links, incomeCents: income, spendingCents: spending }
+  return {
+    nodes,
+    links,
+    incomeCents: earned,
+    refundsCents: refunds,
+    spendingCents: spending,
+    savedCents: income - spending,
+  }
 }
 
 export function registerReports(api: Hono, ctx: Ctx) {
@@ -248,19 +268,42 @@ export function registerReports(api: Hono, ctx: Ctx) {
     const by: GroupBy =
       q.by === "group" || q.by === "merchant" ? q.by : "category"
     const rows = (measure: Measure) => {
-      const { totals, names } = totalsBy(m, p.from, p.to, measure, by)
+      const { totals, names, main } = totalsBy(m, p.from, p.to, measure, by)
       const full = by === "category" ? withChildren(m, totals) : totals
       return [...full]
         .map(([key, t]) => ({
           key,
-          ...labelOf(m, by, key, names),
+          ...labelOf(m, by, key, names, main),
           cents: t.cents,
           count: t.count,
         }))
         .filter((r) => r.cents !== 0)
         .sort((a, b) => b.cents - a.cents)
     }
-    const income = rows("income")
+    let income = rows("income")
+    // One income category says little; show where income came from instead.
+    const incomeBy: GroupBy =
+      by === "category" && income.filter((r) => !r.parent).length < 2
+        ? "merchant"
+        : by
+    if (incomeBy !== by) {
+      const { totals, names, main } = totalsBy(
+        m,
+        p.from,
+        p.to,
+        "income",
+        "merchant"
+      )
+      income = [...totals]
+        .map(([key, t]) => ({
+          key,
+          ...labelOf(m, "merchant", key, names, main),
+          cents: t.cents,
+          count: t.count,
+        }))
+        .filter((r) => r.cents !== 0)
+        .sort((a, b) => b.cents - a.cents)
+    }
     const spending = rows("spending")
     const sum = (xs: { parent: string | null; cents: number }[]) =>
       xs.filter((x) => !x.parent).reduce((s, x) => s + x.cents, 0)
@@ -270,6 +313,7 @@ export function registerReports(api: Hono, ctx: Ctx) {
       months: flows,
       period: p,
       by,
+      incomeBy,
       incomeCents,
       spendingCents,
       netCents: incomeCents - spendingCents,
@@ -309,7 +353,7 @@ export function registerReports(api: Hono, ctx: Ctx) {
       category: q.category,
       merchant: q.merchant,
     })
-    const { totals, names } = totalsBy(m, from, to, measure, by, keep)
+    const { totals, names, main } = totalsBy(m, from, to, measure, by, keep)
     const ranked = [...totals].sort(
       (a, b) => Math.abs(b[1].cents) - Math.abs(a[1].cents)
     )
@@ -349,7 +393,7 @@ export function registerReports(api: Hono, ctx: Ctx) {
         key,
         ...(key === "other"
           ? { label: "Everything else", color: null, icon: null, parent: null }
-          : labelOf(m, by, key, names)),
+          : labelOf(m, by, key, names, main)),
         totalCents: (values.get(key) ?? []).reduce((s, v) => s + v, 0),
         count:
           key === "other"

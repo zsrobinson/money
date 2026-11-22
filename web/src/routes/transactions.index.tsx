@@ -8,6 +8,7 @@ import {
   PageMeta,
   PageTitle,
 } from "@zsrobinson/shell"
+import { ConfirmAction } from "@zsrobinson/shell/blocks/confirm-action"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
@@ -20,6 +21,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@zsrobinson/shell/ui/dropdown-menu"
 import { Input } from "@zsrobinson/shell/ui/input"
@@ -37,6 +41,8 @@ import {
 import {
   BookmarkIcon,
   CheckIcon,
+  KeyboardIcon,
+  PlayIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
@@ -45,6 +51,7 @@ import {
   PlusIcon,
   SearchIcon,
   SlidersHorizontalIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react"
 import { z } from "zod"
@@ -244,6 +251,12 @@ function Transactions() {
         : { ids: [...selected] }),
     })
   const pages = Math.max(1, Math.ceil(total / PAGE))
+  // The first transaction in this view waiting for review, to step from.
+  const reviewQueue = useQuery({
+    ...transactionsQuery({ ...listParams, status: "unreviewed", limit: 1 }),
+    enabled: (meta.data?.unreviewed ?? 0) > 0,
+  })
+  const firstReview = reviewQueue.data?.items[0]?.id
   const byDate = (s.sort ?? "date") === "date"
   const unreviewed = meta.data?.unreviewed ?? 0
   const reviewing = s.status === "unreviewed"
@@ -323,6 +336,7 @@ function Transactions() {
   const isView = (v: { search: Record<string, string> }) =>
     JSON.stringify(Object.entries(v.search).sort()) ===
     JSON.stringify(Object.entries(viewSearch).sort())
+  const currentView = (views.data ?? []).find(isView)
   const openView = (v: { search: Record<string, string> }) => {
     setText(v.search.q ?? "")
     void navigate({
@@ -467,6 +481,13 @@ function Transactions() {
             <SlidersHorizontalIcon data-icon="inline-start" />
             <span className="max-sm:sr-only">Filters</span>
           </Button>
+          <ViewsMenu
+            views={views.data ?? []}
+            canSave={anyFilter && !currentView}
+            onOpen={openView}
+            onSave={(name) => save.mutate({ name, search: viewSearch })}
+            onDelete={(id) => forget.mutateAsync({ id })}
+          />
         </div>
         {filtersOpen ? (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
@@ -576,30 +597,25 @@ function Transactions() {
             />
           </div>
         ) : null}
-        {(views.data?.length ?? 0) > 0 || chips.length || anyFilter ? (
+        {chips.length || anyFilter ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            {(views.data ?? []).map((v) => (
-              <span key={v.id} className="flex items-center">
-                <Button
-                  size="xs"
-                  variant={isView(v) ? "secondary" : "ghost"}
-                  className="rounded-r-none pr-1.5"
-                  onClick={() => openView(v)}
+            {currentView ? (
+              <Badge className="h-6 gap-1 pr-1 font-normal" variant="outline">
+                <BookmarkIcon className="size-3" />
+                {currentView.name}
+                <button
+                  type="button"
+                  aria-label={`Leave view ${currentView.name}`}
+                  className="rounded-full p-0.5 hover:bg-muted"
+                  onClick={() => {
+                    setText("")
+                    void navigate({ search: {}, replace: true })
+                  }}
                 >
-                  <BookmarkIcon data-icon="inline-start" />
-                  {v.name}
-                </Button>
-                <Button
-                  size="icon-xs"
-                  variant={isView(v) ? "secondary" : "ghost"}
-                  className="rounded-l-none text-muted-foreground"
-                  aria-label={`Remove view ${v.name}`}
-                  onClick={() => forget.mutate({ id: v.id })}
-                >
-                  <XIcon />
-                </Button>
-              </span>
-            ))}
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ) : null}
             {chips.map((c) => (
               <Badge
                 key={c.label}
@@ -617,11 +633,6 @@ function Transactions() {
                 </button>
               </Badge>
             ))}
-            {anyFilter && !(views.data ?? []).some(isView) ? (
-              <SaveView
-                onSave={(name) => save.mutate({ name, search: viewSearch })}
-              />
-            ) : null}
             {anyFilter ? (
               <Button
                 variant="ghost"
@@ -656,10 +667,6 @@ function Transactions() {
             </span>
           </>
         ) : null}
-        <span className="hidden items-center gap-1 lg:flex">
-          <Kbd>j</Kbd>
-          <Kbd>k</Kbd> move · <Kbd>r</Kbd> reviewed · <Kbd>c</Kbd> category
-        </span>
       </PageMeta>
       {list.isError ? (
         <QueryError
@@ -719,6 +726,24 @@ function Transactions() {
                 <ListChecksIcon data-icon="inline-start" />
                 Select
               </Button>
+              {firstReview ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  render={
+                    <Link
+                      to="/transactions/$id"
+                      params={{ id: firstReview }}
+                      search={{ list: { ...listParams, status: "unreviewed" } }}
+                    />
+                  }
+                  nativeButton={false}
+                >
+                  <PlayIcon data-icon="inline-start" />
+                  Start review
+                </Button>
+              ) : null}
+              <Shortcuts />
               <Choice
                 aria-label="Sort"
                 size="sm"
@@ -798,39 +823,114 @@ function Transactions() {
   )
 }
 
-function SaveView({ onSave }: { onSave: (name: string) => void }) {
-  const [open, setOpen] = useState(false)
+/**
+ * Saved filter views: open one, save the current filters, or delete one
+ * (with a confirm) under Manage.
+ */
+function ViewsMenu({
+  views,
+  canSave,
+  onOpen,
+  onSave,
+  onDelete,
+}: {
+  views: { id: string; name: string; search: Record<string, string> }[]
+  canSave: boolean
+  onOpen: (v: { search: Record<string, string> }) => void
+  onSave: (name: string) => void
+  onDelete: (id: string) => Promise<unknown>
+}) {
+  const [saving, setSaving] = useState(false)
   const [name, setName] = useState("")
+  const [deleting, setDeleting] = useState<{ id: string; name: string }>()
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button size="xs" variant="ghost" />}>
-        <BookmarkIcon data-icon="inline-start" />
-        Save view
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 gap-2 p-3">
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!name.trim()) return
-            onSave(name.trim())
-            setName("")
-            setOpen(false)
-          }}
-        >
-          <Input
-            autoFocus
-            aria-label="View name"
-            placeholder="Name this view"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Button type="submit" size="sm" disabled={!name.trim()}>
-            Save
-          </Button>
-        </form>
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={saving} onOpenChange={setSaving}>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="outline" />}>
+            <BookmarkIcon data-icon="inline-start" />
+            <span className="max-sm:sr-only">Views</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-56">
+            {views.length ? (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Saved views</DropdownMenuLabel>
+                {views.map((v) => (
+                  <DropdownMenuItem key={v.id} onClick={() => onOpen(v)}>
+                    {v.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            ) : null}
+            {views.length ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              disabled={!canSave}
+              onClick={() => {
+                setName("")
+                setSaving(true)
+              }}
+            >
+              <PlusIcon />
+              Save current filters…
+            </DropdownMenuItem>
+            {views.length ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Manage views</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-48">
+                  {views.map((v) => (
+                    <DropdownMenuItem
+                      key={v.id}
+                      variant="destructive"
+                      onClick={() => setDeleting(v)}
+                    >
+                      <Trash2Icon />
+                      Delete {v.name}…
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <PopoverTrigger
+          render={
+            <span aria-hidden className="pointer-events-none -ml-2 w-0" />
+          }
+        />
+        <PopoverContent align="end" className="w-64 gap-2 p-3">
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!name.trim()) return
+              onSave(name.trim())
+              setSaving(false)
+            }}
+          >
+            <Input
+              autoFocus
+              aria-label="View name"
+              placeholder="Name this view"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Button type="submit" size="sm" disabled={!name.trim()}>
+              Save
+            </Button>
+          </form>
+        </PopoverContent>
+      </Popover>
+      <ConfirmAction
+        open={Boolean(deleting)}
+        onOpenChange={(open) => !open && setDeleting(undefined)}
+        title={`Delete the view “${deleting?.name ?? ""}”?`}
+        confirmLabel="Delete view"
+        destructive
+        onConfirm={() => onDelete(deleting!.id)}
+      >
+        Only the saved filters go; no transactions change.
+      </ConfirmAction>
+    </>
   )
 }
 
@@ -997,5 +1097,47 @@ function BulkActions({
         </PopoverContent>
       </Popover>
     </>
+  )
+}
+
+/** The list's keyboard shortcuts, behind a "?" button. */
+function Shortcuts() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Keyboard shortcuts"
+            className="max-lg:hidden"
+          />
+        }
+      >
+        <KeyboardIcon />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-60 gap-2 p-3 text-sm">
+        {[
+          [["j", "k"], "Next and previous"],
+          [["Enter"], "Open"],
+          [["r"], "Mark reviewed"],
+          [["c"], "Change category"],
+          [["x"], "Select"],
+          [["/"], "Search"],
+        ].map(([keys, what]) => (
+          <div
+            key={what as string}
+            className="flex items-center justify-between gap-3"
+          >
+            <span className="text-muted-foreground">{what as string}</span>
+            <span className="flex gap-1">
+              {(keys as string[]).map((k) => (
+                <Kbd key={k}>{k}</Kbd>
+              ))}
+            </span>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   )
 }

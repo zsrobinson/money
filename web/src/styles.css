@@ -24,9 +24,10 @@
 }
 
 /*
- * Category colours: each category keeps one of these everywhere (charts,
- * dots, icons). Strong steps sit at 600 in light and 400 in dark; the soft
- * steps at 300 and 700, so neighbours stay apart in both themes.
+ * Category colours: each top-level category holds one of these everywhere
+ * (charts, dots, icons); its children are tints of it. Strong steps sit at
+ * 600 in light and 400 in dark; soft steps at 300 in both, so a soft colour
+ * is the lighter of its pair in either theme.
  */
 :root {
   --cat-red: var(--flexoki-red-600);
@@ -45,6 +46,7 @@
   --cat-blue-soft: var(--flexoki-blue-300);
   --cat-purple-soft: var(--flexoki-purple-300);
   --cat-magenta-soft: var(--flexoki-magenta-300);
+  --cat-gray: var(--flexoki-400);
   --cat-none: var(--flexoki-400);
 }
 :root {
@@ -58,14 +60,15 @@
     --cat-blue: var(--flexoki-blue-400);
     --cat-purple: var(--flexoki-purple-400);
     --cat-magenta: var(--flexoki-magenta-400);
-    --cat-red-soft: var(--flexoki-red-700);
-    --cat-orange-soft: var(--flexoki-orange-700);
-    --cat-yellow-soft: var(--flexoki-yellow-700);
-    --cat-green-soft: var(--flexoki-green-700);
-    --cat-cyan-soft: var(--flexoki-cyan-700);
-    --cat-blue-soft: var(--flexoki-blue-700);
-    --cat-purple-soft: var(--flexoki-purple-700);
-    --cat-magenta-soft: var(--flexoki-magenta-700);
+    --cat-red-soft: var(--flexoki-red-300);
+    --cat-orange-soft: var(--flexoki-orange-300);
+    --cat-yellow-soft: var(--flexoki-yellow-300);
+    --cat-green-soft: var(--flexoki-green-300);
+    --cat-cyan-soft: var(--flexoki-cyan-300);
+    --cat-blue-soft: var(--flexoki-blue-300);
+    --cat-purple-soft: var(--flexoki-purple-300);
+    --cat-magenta-soft: var(--flexoki-magenta-300);
+    --cat-gray: var(--flexoki-500);
     --cat-none: var(--flexoki-600);
   }
 }

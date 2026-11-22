@@ -10,7 +10,13 @@ import {
   TooltipTrigger,
 } from "@zsrobinson/shell/ui/tooltip"
 import { Button } from "@zsrobinson/shell/ui/button"
-import { CheckIcon, EyeOffIcon, NotebookPenIcon, SplitIcon } from "lucide-react"
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  EyeOffIcon,
+  NotebookPenIcon,
+  SplitIcon,
+} from "lucide-react"
 import { CategoryPicker } from "@/components/category-picker"
 import { CategoryDot } from "@/components/category-style"
 import { Amount, MerchantMark } from "@/components/money"
@@ -37,7 +43,8 @@ export function ReviewDot() {
           <span
             role="img"
             aria-label="Needs review"
-            className="inline-block size-1.5 shrink-0 rounded-full bg-primary"
+            // A hollow ring, so it never reads as a category colour dot.
+            className="inline-block size-2 shrink-0 rounded-full border-[1.5px] border-primary"
           />
         }
       />
@@ -252,6 +259,15 @@ function TxnRow({
         <span className="truncate" title={cat?.fullLabel}>
           {categoryText}
         </span>
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 transition-opacity",
+            t.needsReview
+              ? "opacity-70"
+              : "opacity-0 group-focus-within/row:opacity-70 group-hover/row:opacity-70"
+          )}
+        />
       </CategoryPicker>
     ) : (
       <span
@@ -375,7 +391,7 @@ function TxnRow({
               variant="ghost"
               aria-label={`Mark ${name} reviewed`}
               title="Mark reviewed (r)"
-              className="relative z-10 text-muted-foreground opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 max-sm:hidden"
+              className="relative z-10 rounded-full text-muted-foreground ring-1 ring-border hover:text-foreground"
               onClick={() => patch.mutate({ reviewed: true })}
             >
               <CheckIcon />
