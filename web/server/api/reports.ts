@@ -199,7 +199,11 @@ function sankey(m: Computed, from: string, to: string) {
   const links: { source: string; target: string; value: number }[] = []
   // The middle node is the money to spend: income, or when spending ran
   // past it, the spending itself with savings drawn in.
-  const hub = overspent ? "Spending" : "Income"
+  const hub = overspent
+    ? "Spending"
+    : refunds > 0
+      ? "Income and refunds"
+      : "Income"
   for (const [k, v] of ins.kept) {
     nodes.push({
       id: `in:${k}`,
