@@ -19,7 +19,6 @@ import {
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
 import {
   Alert,
-  AlertAction,
   AlertDescription,
   AlertTitle,
 } from "@zsrobinson/shell/ui/alert"
