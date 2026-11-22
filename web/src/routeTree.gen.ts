@@ -18,6 +18,7 @@ import { Route as RecurringRouteImport } from './routes/recurring'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AccountsIndexRouteImport } from './routes/accounts.index'
 import { Route as AccountsIdRouteImport } from './routes/accounts.$id'
+import { Route as AccountsNewRouteImport } from './routes/accounts.new'
 import { Route as GoalsIndexRouteImport } from './routes/goals.index'
 import { Route as GoalsIdRouteImport } from './routes/goals.$id'
 import { Route as GoalsNewRouteImport } from './routes/goals.new'
@@ -75,6 +76,11 @@ const AccountsIndexRoute = AccountsIndexRouteImport.update({
 const AccountsIdRoute = AccountsIdRouteImport.update({
   id: '/accounts/$id',
   path: '/accounts/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountsNewRoute = AccountsNewRouteImport.update({
+  id: '/accounts/new',
+  path: '/accounts/new',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GoalsIndexRoute = GoalsIndexRouteImport.update({
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
+  '/accounts/new': typeof AccountsNewRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
   '/reports/trends': typeof ReportsTrendsRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
+  '/accounts/new': typeof AccountsNewRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
   '/reports/trends': typeof ReportsTrendsRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
+  '/accounts/new': typeof AccountsNewRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
   '/reports/trends': typeof ReportsTrendsRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/recurring'
     | '/settings'
     | '/accounts/$id'
+    | '/accounts/new'
     | '/goals/$id'
     | '/goals/new'
     | '/reports/trends'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/recurring'
     | '/settings'
     | '/accounts/$id'
+    | '/accounts/new'
     | '/goals/$id'
     | '/goals/new'
     | '/reports/trends'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/recurring'
     | '/settings'
     | '/accounts/$id'
+    | '/accounts/new'
     | '/goals/$id'
     | '/goals/new'
     | '/reports/trends'
@@ -300,6 +312,7 @@ export interface RootRouteChildren {
   RecurringRoute: typeof RecurringRoute
   SettingsRoute: typeof SettingsRoute
   AccountsIdRoute: typeof AccountsIdRoute
+  AccountsNewRoute: typeof AccountsNewRoute
   GoalsIdRoute: typeof GoalsIdRoute
   GoalsNewRoute: typeof GoalsNewRoute
   ReportsTrendsRoute: typeof ReportsTrendsRoute
@@ -379,6 +392,13 @@ declare module '@tanstack/react-router' {
       path: '/accounts/$id'
       fullPath: '/accounts/$id'
       preLoaderRoute: typeof AccountsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accounts/new': {
+      id: '/accounts/new'
+      path: '/accounts/new'
+      fullPath: '/accounts/new'
+      preLoaderRoute: typeof AccountsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/goals/': {
@@ -484,6 +504,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecurringRoute: RecurringRoute,
   SettingsRoute: SettingsRoute,
   AccountsIdRoute: AccountsIdRoute,
+  AccountsNewRoute: AccountsNewRoute,
   GoalsIdRoute: GoalsIdRoute,
   GoalsNewRoute: GoalsNewRoute,
   ReportsTrendsRoute: ReportsTrendsRoute,
