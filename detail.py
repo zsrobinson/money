@@ -183,6 +183,10 @@ def publish(db, path):
     try:
         out.executescript(SCHEMA)
         out.executemany('INSERT INTO meta VALUES(?,?)',[('schema_version','2'),('generated_at',datetime.now(timezone.utc).isoformat())])
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='optional_product_status'").fetchone():
+            for product,status in db.execute('SELECT product,status FROM optional_product_status'):
+                if product in {'investments','liabilities'} and status in {'ok','relink_required','unavailable'}:
+                    out.execute('INSERT INTO meta VALUES(?,?)',(product+'_status',status))
         separate=separate_accounts(db)
         for source in snapshot_sources(db):
             snap=source.read_snapshot(db)

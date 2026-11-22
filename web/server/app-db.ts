@@ -1,4 +1,4 @@
-import { chmodSync, existsSync } from "node:fs"
+import { chmodSync, existsSync, renameSync, unlinkSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 
 /** Bump together with docs/overrides.md whenever a table or evaluator rule changes. */
@@ -76,8 +76,8 @@ function addColumn(
 
 /**
  * Open (creating if needed) and migrate the app database. Idempotent. The
- * file is 0640 with a rollback journal, so the sync user's group can read it
- * without write access to WAL side files.
+ * live file and its journals are owner-only. Sync reads a separately published
+ * immutable snapshot, never this database.
  */
 export function openAppDb(path: string) {
   const created = path !== ":memory:" && !existsSync(path)
@@ -87,7 +87,7 @@ export function openAppDb(path: string) {
   )
   migrate(db)
   // SQLite creates the file on first write; journals inherit its mode.
-  if (created) chmodSync(path, 0o640)
+  if (created) chmodSync(path, 0o600)
   return db
 }
 
@@ -147,3 +147,16 @@ export function migrate(db: DatabaseSync) {
 }
 
 export type AppDb = DatabaseSync
+
+/** Publish a consistent read-only copy; atomic replacement keeps readers safe. */
+export function publishAppSnapshot(db: AppDb, destination: string) {
+  const temp = destination + ".new"
+  try {
+    if (existsSync(temp)) unlinkSync(temp)
+    db.prepare("VACUUM INTO ?").run(temp)
+    chmodSync(temp, 0o640)
+    renameSync(temp, destination)
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp)
+  }
+}

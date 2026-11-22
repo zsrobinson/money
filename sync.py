@@ -16,7 +16,7 @@ ingest_holdings = telemetry.timed('store')(ingest_holdings)
 
 @contextmanager
 def private_store():
-    os.umask(0o027)
+    os.umask(0o077)
     root = Path(os.environ.get('PLAIDMCP_PRIVATE','private'))
     root.mkdir(mode=0o700,parents=True,exist_ok=True)
     os.chmod(root,0o700)
@@ -28,14 +28,18 @@ def private_store():
         try: yield db
         finally: db.close()
 
-def optional(db, step):
+def optional(db, step, product="detail"):
+    db.execute("CREATE TABLE IF NOT EXISTS optional_product_status(product TEXT PRIMARY KEY,status TEXT NOT NULL)")
     """Web-detail extras never fail an item: any error keeps the previous rows."""
     db.execute('SAVEPOINT optional_detail')
     try:
         step()
         db.execute('RELEASE optional_detail')
-    except Exception:
+        db.execute('INSERT OR REPLACE INTO optional_product_status VALUES(?,?)',(product,'ok'))
+    except Exception as error:
         db.execute('ROLLBACK TO optional_detail');db.execute('RELEASE optional_detail')
+        relink=isinstance(error,PlaidError) and error.code in {'ITEM_LOGIN_REQUIRED','ADDITIONAL_CONSENT_REQUIRED','PRODUCT_NOT_READY','PRODUCTS_NOT_SUPPORTED','NO_INVESTMENT_ACCOUNTS'}
+        db.execute('INSERT OR REPLACE INTO optional_product_status VALUES(?,?)',(product,'relink_required' if relink else 'unavailable'))
 
 
 def investment_transactions(client, token, today=None):
@@ -98,9 +102,9 @@ def sync_item(db, client, row):
                     ingest_recurring(db,item,recurring)
                 if 'investments' in products:
                     ingest_holdings(db,item,client.call('/investments/holdings/get',access_token=token))
-                    optional(db,lambda:ingest_investment_transactions(db,item,investment_transactions(client,token)))
+                    optional(db,lambda:ingest_investment_transactions(db,item,investment_transactions(client,token)),"investments")
                 if 'liabilities' in products:
-                    optional(db,lambda:ingest_liabilities(db,item,client.call('/liabilities/get',access_token=token)))
+                    optional(db,lambda:ingest_liabilities(db,item,client.call('/liabilities/get',access_token=token)),"liabilities")
                 now = datetime.now(timezone.utc).isoformat()
                 db.execute('UPDATE items SET as_of=?,error=NULL WHERE id=?',(now,item))
             return

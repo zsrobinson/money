@@ -193,6 +193,8 @@ def test_liabilities_only_when_consented_and_errors_skip(snapshot):
         sync_item(db,Broker(fail={'/liabilities/get':error}),credentials(db,'investments,liabilities'))
         assert db.execute("SELECT error FROM items WHERE id='broker'").fetchone()[0] is None
         assert db.execute('SELECT COUNT(*) FROM web_liabilities').fetchone()==(1,)
+        expected='relink_required' if isinstance(error,PlaidError) else 'unavailable'
+        assert db.execute("SELECT status FROM optional_product_status WHERE product='liabilities'").fetchone()==(expected,)
     fake=Broker(liabilities=CARD_BILL);sync_item(db,fake,credentials(db,'investments'))
     assert '/liabilities/get' not in [c[0] for c in fake.calls]
     sync_item(db,Broker(liabilities=CARD_BILL),credentials(db,'investments,liabilities'))
@@ -209,6 +211,7 @@ def test_detail_publishes_investment_transactions_and_liabilities(snapshot,tmp_p
     with sqlite3.connect(target) as out:
         rows=out.execute('SELECT id,account_id,security_id,date,type,subtype,quantity,price,amount_cents,fees_cents FROM investment_transactions ORDER BY date').fetchall()
         holding=out.execute('SELECT account_id,security_id FROM holdings').fetchone()
+        assert out.execute("SELECT value FROM meta WHERE key='liabilities_status'").fetchone()==('ok',)
         bill=out.execute('SELECT * FROM liabilities').fetchone()
         assert out.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()==('2',)
     assert [r[0] for r in rows]==[opaque('itx','broker',f'itx-{i}') for i in range(3)]

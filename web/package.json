@@ -13,7 +13,8 @@
     "fixtures": "tsx fixtures/generate.ts",
     "fixture-server": "tsx server/fixture-server.ts",
     "start": "tsx server/main.ts",
-    "shell:update": "node scripts/shell-update.mjs"
+    "shell:update": "node scripts/shell-update.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

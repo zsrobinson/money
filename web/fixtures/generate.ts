@@ -4,6 +4,10 @@ import { mkdirSync, rmSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import {
+  assertFixtureDirectory,
+  fixturePaths,
+} from "../server/fixture-guard.ts"
 import { openAppDb } from "../server/app-db.ts"
 
 export const FIXTURE_TODAY = "2026-11-18"
@@ -148,6 +152,10 @@ const acct = (key: string) =>
 const src = (key: string) => `src_${hash(`fixture-source-${key}`).slice(0, 40)}`
 
 export function generate(outDir: string) {
+  outDir = assertFixtureDirectory(outDir)
+  mkdirSync(outDir, { recursive: true })
+  // Validate existing database symlinks before overwriting any fixture.
+  fixturePaths({}, outDir, false)
   const r = rng(20261118)
   const between = (lo: number, hi: number) => Math.round(lo + (hi - lo) * r())
   const chance = (p: number) => r() < p

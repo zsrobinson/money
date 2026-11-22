@@ -328,3 +328,18 @@ test("guard: fixture tooling resolves only inside the fixture directory", () => 
   assert.match(fixture, /fixturePaths\(/)
   assert.doesNotMatch(fixture, /\/var\/lib|MONEY_DETAIL_DB|MONEY_APP_DB/)
 })
+
+test("guard: fixture generation rejects deployment paths before writing", () => {
+  assert.throws(() => generate("/var/lib/money-app"))
+  const generator = readFileSync(
+    resolve(server, "../fixtures/generate.ts"),
+    "utf8"
+  )
+  assert.match(generator, /outDir = assertFixtureDirectory\(outDir\)/)
+  assert.match(generator, /fixturePaths\(\{\}, outDir, false\)/)
+  for (const file of ["fixture-server.ts", "../fixtures/generate.ts"])
+    assert.doesNotMatch(
+      readFileSync(resolve(server, file), "utf8"),
+      /\/(?:var|opt|srv)\/[^"'\s]*\.(?:sqlite|db)/
+    )
+})

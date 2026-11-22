@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { serve } from "@zsrobinson/shell/server"
 import { createMoneyServer } from "./app.ts"
-import { openAppDb } from "./app-db.ts"
+import { openAppDb, publishAppSnapshot } from "./app-db.ts"
 import { detailStore } from "./detail.ts"
 import { createModel } from "./model.ts"
 import { assertLoopback, assertProductionPaths } from "./fixture-guard.ts"
@@ -38,8 +38,25 @@ const app = createMoneyServer(model, {
   syncHealthFile: process.env.MONEY_SYNC_HEALTH_FILE,
 })
 
+const snapshot = process.env.MONEY_APP_SNAPSHOT
+if (!snapshot) throw new Error("Missing MONEY_APP_SNAPSHOT")
+publishAppSnapshot(db, snapshot)
+
 serve({
-  fetch: app.fetch,
+  fetch: async (request) => {
+    const response = await app.fetch(request)
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && response.ok) {
+      try {
+        publishAppSnapshot(db, snapshot)
+      } catch {
+        return new Response('{"error":"Snapshot unavailable"}', {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+    }
+    return response
+  },
   hostname: host,
   port: Number(process.env.PORT || 8787),
 })
