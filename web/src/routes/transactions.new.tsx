@@ -95,10 +95,7 @@ function NewTransaction() {
           <EmptyState
             title="Add a manual account first"
             action={
-              <Button
-                render={<Link to={"/accounts/new" as never} />}
-                nativeButton={false}
-              >
+              <Button render={<Link to="/accounts/new" />} nativeButton={false}>
                 Add account
               </Button>
             }

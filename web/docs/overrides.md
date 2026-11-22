@@ -100,20 +100,28 @@ group is that row's). Outside the app every custom code maps to an owned code:
 its built-in ancestor when it has one, otherwise by group: `income` to
 `income`, `expense` to `other`, `transfer` to `bank_transfer`. A custom row's
 parent must be a top-level row (one level of children). A custom row whose
-parent no longer exists is ignored.
+parent no longer exists is ignored. Any category result that is neither
+built-in nor a valid custom row, including an ignored row, counts as `other`
+(inside the app it shows as Other).
 
 A built-in row with `merged_into` set is a merge: wherever the evaluator's
 category result (snapshot, rule or override) is that built-in code, it
 becomes `merged_into` instead (one step; the target is never itself merged).
 Merging rewrites explicit references in the app database, so the remap only
 matters for snapshot categories. Rule matching still reads the snapshot
-category. `icon`, `color` and `budget_kind` never leave the app.
+category. The owned code is itself remapped by a merge, from the evaluator's
+result before its own merge, so a custom child of a merged built-in and the
+group fallbacks land on the merge target. Merging also points anything
+already merged into the source at the new target, so chains never form.
+`icon`, `color` and `budget_kind` never leave the app.
 
 Inside the app a parent's figure always includes its children, with each child
 also shown on its own, and grand totals add only top-level categories so each
 dollar counts once. Budgets are app-only and follow the same rule: a parent's
 budget is its own `budgets`/`budget_defaults` amount plus its children's, and
-its spending includes theirs. The stored rows are unchanged.
+its spending includes theirs. The stored rows are unchanged. Budget amounts
+come from `budget_plans` and `budgets` (v4, below); `budget_defaults` is no
+longer read.
 
 ### Splits
 
@@ -147,6 +155,10 @@ transaction on that account dated after that statement and on or before D:
 an asset moves by `amount_cents`, a liability's amount owed moves by
 `-amount_cents`. With no statement yet, the balance starts at zero on the day
 of the first transaction. With neither, the balance is unknown (NULL).
+Hidden manual transactions still move the balance, and the balance uses the
+manual date, not a `txn_overrides.date`. Any non-NULL `closed_at` makes the
+account historical. A `currency` that is not three capital letters reports
+as `UNKNOWN` outside the app.
 
 `manual_txns` belong only to manual accounts. They follow the evaluator like
 snapshot transactions: `category`, `merchant` and `date` are their snapshot
@@ -215,13 +227,19 @@ Each part's amount is `trunc(amount_cents * percent / 10000)` (toward zero)
 and the last part takes the remainder, so parts sum to the amount; a part
 that comes to zero is dropped, and when fewer than two parts remain the
 transaction takes the first non-zero part's category instead of a split.
-Split categories follow the same owned mapping as any other category.
+Split categories follow the same owned mapping as any other category. A rule
+split applies even when `txn_overrides.category` is set; only `txn_splits`
+rows suppress it. When a rule split collapses to one part, that part's
+category becomes the transaction's category; when every part is zero, the
+transaction keeps its category.
 
 `applies_from` (v4) limits a rule to transactions whose **snapshot** date is
 on or after it ("only new transactions"); NULL applies to all history.
 `mark_recurring` is read only by the app's recurring view. Readers ignore
-action keys they do not use, but a key they do not know in `match_json`
-makes the rule match nothing.
+action keys they do not use, but a key they do not know in `match_json`, an
+empty `any` list, an empty or invalid condition inside it, or a value of the
+wrong type makes the rule match nothing. `tests/overrides-v4-vectors.json`
+at the repository root holds shared vectors both implementations must pass.
 
 Normalization: `nfkc(casefold(nfkc(s)))` with full Unicode case folding
 (Python `str.casefold()`; the server uses a table generated from it, not

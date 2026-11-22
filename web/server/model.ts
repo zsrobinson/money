@@ -38,10 +38,14 @@ export type Split = {
   amountCents: number
   category: string
   note: string | null
+  /** Owned code outside the app, from the evaluator's result before a merge. */
+  owned?: string
 }
 export type EffTxn = Txn & {
   snapshot: { category: string; merchant: string | null; date: string }
   categoryEff: string
+  /** Owned code outside the app, from the evaluator's result before a merge. */
+  ownedEff: string
   merchantEff: string | null
   merchantKey: string
   hidden: boolean
@@ -182,6 +186,16 @@ const SNAPSHOT_TYPE: Record<string, { type: string; subtype: string | null }> =
 export const isLiability = (a: Pick<Account, "type">) =>
   a.type === "credit" || a.type === "loan"
 
+const ACTION_KEYS = new Set([
+  "category",
+  "merchant",
+  "hide",
+  "mark_reviewed",
+  "tags",
+  "split",
+  "mark_recurring",
+])
+
 export function loadRules(db: AppDb): Rule[] {
   return (
     db.prepare("SELECT * FROM rules ORDER BY position, id").all() as Record<
@@ -190,7 +204,16 @@ export function loadRules(db: AppDb): Rule[] {
     >[]
   ).flatMap((r) => {
     const match = RuleMatch.safeParse(JSON.parse(String(r.match_json)))
-    const action = RuleAction.safeParse(JSON.parse(String(r.action_json)))
+    // Action keys this version does not know are ignored; unknown match
+    // keys make the rule match nothing (the strict schema skips it).
+    const rawAction = JSON.parse(String(r.action_json)) as unknown
+    const action = RuleAction.safeParse(
+      rawAction && typeof rawAction === "object" && !Array.isArray(rawAction)
+        ? Object.fromEntries(
+            Object.entries(rawAction).filter(([k]) => ACTION_KEYS.has(k))
+          )
+        : rawAction
+    )
     // A rule written by a newer app version is ignored rather than misapplied.
     if (!match.success || !action.success) return []
     return [
@@ -297,6 +320,12 @@ function buildCategories(detail: Detail, db: AppDb) {
     }
     list.push(info)
     byCode.set(r.code, info)
+  }
+  // Outside the app, a merged built-in's code (and anything rolling up to it)
+  // reports as the merge target.
+  for (const c of list) {
+    const target = byCode.get(c.owned)?.mergedInto
+    if (target && byCode.has(target)) c.owned = target
   }
   const fallback = byCode.get("other")
   const category = (code: string): CategoryInfo =>
@@ -553,7 +582,7 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
   const txns: EffTxn[] = source.map((t) => {
     const r = applyRules(ordered, t, matchText(t))
     const o = overrides.get(t.id)
-    const categoryEff = resolve(o?.category ?? r.category ?? t.category)
+    const rawCategory = o?.category ?? r.category ?? t.category
     const merchantEff = o?.merchant ?? r.merchant ?? t.merchant
     const own = splits.get(t.id)
     const shared = !own && r.split ? splitByShare(t.amountCents, r.split) : null
@@ -568,7 +597,8 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
       ...t,
       date,
       snapshot: { category: t.category, merchant: t.merchant, date: t.date },
-      categoryEff: shared?.single ? resolve(shared.single) : categoryEff,
+      categoryEff: resolve(shared?.single ?? rawCategory),
+      ownedEff: category(shared?.single ?? rawCategory).owned,
       merchantEff,
       merchantKey: normalizeText(merchantEff ?? t.description ?? ""),
       hidden,
@@ -583,12 +613,17 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
       note: o?.note ?? null,
       tags: allTags.filter((id) => tagIds.has(id)),
       splits: own
-        ? own.map((x) => ({ ...x, category: resolve(x.category) }))
+        ? own.map((x) => ({
+            ...x,
+            category: resolve(x.category),
+            owned: category(x.category).owned,
+          }))
         : shared?.parts.length
           ? shared.parts.map((x, idx) => ({
               idx,
               amountCents: x.amountCents,
               category: resolve(x.category),
+              owned: category(x.category).owned,
               note: null,
             }))
           : null,
@@ -614,15 +649,22 @@ function compute(detail: Detail, db: AppDb, today: string): Computed {
     const parts = t.splits?.length
       ? t.splits.map((s) => ({
           category: s.category,
+          owned: s.owned,
           amountCents: s.amountCents,
         }))
-      : [{ category: t.categoryEff, amountCents: t.amountCents }]
+      : [
+          {
+            category: t.categoryEff,
+            owned: t.ownedEff,
+            amountCents: t.amountCents,
+          },
+        ]
     for (const p of parts) {
       const c = category(p.category)
       allocations.push({
         txn: t,
         category: c.code,
-        owned: c.owned,
+        owned: p.owned ?? c.owned,
         group: c.group,
         amountCents: p.amountCents,
       })

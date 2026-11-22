@@ -27,6 +27,7 @@ import {
 } from "@/components/money"
 import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
 import { useCategories } from "@/components/category-style"
+import { GoalsCard } from "@/components/goals"
 import { TxnRows } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
@@ -346,6 +347,7 @@ function Dashboard() {
               </SectionCard>
             </PageStack>
             <PageStack>
+              <GoalsCard goals={s.goals} />
               {investments.data?.holdings.length ? (
                 <SectionCard
                   title="Investments"

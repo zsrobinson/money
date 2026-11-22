@@ -1310,8 +1310,8 @@
    "splits": [],
    "categories": [],
    "expected": {
-    "category": "food",
-    "owned": "food",
+    "category": "shopping",
+    "owned": "shopping",
     "hidden": false,
     "allocations": [
      {

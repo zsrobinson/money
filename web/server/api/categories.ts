@@ -267,6 +267,12 @@ export function registerCategories(api: Hono, ctx: Ctx) {
     if (from.custom)
       db.prepare("DELETE FROM categories WHERE code=?").run(from.code)
     else save(from, { merged_into: into.code, hidden: 1 })
+    // Anything merged into this one now goes straight to the new target, so
+    // a merge is always one step.
+    db.prepare("UPDATE categories SET merged_into=? WHERE merged_into=?").run(
+      into.code,
+      from.code
+    )
   }
   api.post("/categories/:code/merge", async (c) => {
     const b = await body(c, z.object({ into: z.string().min(1) }).strict())

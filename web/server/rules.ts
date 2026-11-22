@@ -212,7 +212,7 @@ export function splitByShare(
   })
   const kept = parts.filter((p) => p.amountCents !== 0)
   if (kept.length >= 2) return { parts: kept }
-  return { parts: [], single: kept[0]?.category ?? shares[0]?.category }
+  return { parts: [], single: kept[0]?.category }
 }
 
 export function orderRules(rules: Rule[]) {

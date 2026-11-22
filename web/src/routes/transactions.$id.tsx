@@ -390,9 +390,8 @@ function TransactionView({ t }: { t: TxnDetail }) {
                   <DropdownMenuItem
                     render={
                       <Link
-                        // The recurring detail page lands with its own branch.
-                        to={"/recurring/$key" as never}
-                        params={{ key: t.merchantKey } as never}
+                        to="/recurring/$key"
+                        params={{ key: t.merchantKey }}
                       />
                     }
                   >
@@ -710,7 +709,7 @@ function TransactionView({ t }: { t: TxnDetail }) {
                     <span className="text-sm text-muted-foreground">
                       No tags yet.{" "}
                       <Link
-                        to={"/categories" as never}
+                        to="/categories"
                         className="underline underline-offset-4"
                       >
                         Create tags

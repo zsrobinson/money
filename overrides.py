@@ -146,8 +146,11 @@ def resolve(txn,rules,override=None,splits=(),categories=()):
     """One transaction through the whole evaluator; the shape of the shared vectors."""
     effective,owned=category_map(categories)
     value=evaluate(txn,rules,override)
-    return {'category':effective(value['category']),'owned':owned(value['category']),'hidden':bool(value['hidden']),
-        'allocations':[{'category':effective(code),'owned':owned(code),'amount_cents':amount} for code,amount in allocate(txn['amount_cents'],value['category'],splits,value['split'])]}
+    parts=allocate(txn['amount_cents'],value['category'],splits,value['split'])
+    # A rule split that collapses to one part gives the transaction that category.
+    code=parts[0][0] if not splits and value['split'] and len(parts)==1 else value['category']
+    return {'category':effective(code),'owned':owned(code),'hidden':bool(value['hidden']),
+        'allocations':[{'category':effective(c),'owned':owned(c),'amount_cents':amount} for c,amount in parts]}
 
 
 def register_dates(db):
