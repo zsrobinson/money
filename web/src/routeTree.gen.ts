@@ -12,23 +12,24 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BudgetsRouteImport } from './routes/budgets'
 import { Route as CashFlowRouteImport } from './routes/cash-flow'
-import { Route as InvestmentsRouteImport } from './routes/investments'
-import { Route as RecurringRouteImport } from './routes/recurring'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AccountsIndexRouteImport } from './routes/accounts.index'
 import { Route as AccountsIdRouteImport } from './routes/accounts.$id'
 import { Route as GoalsIndexRouteImport } from './routes/goals.index'
 import { Route as GoalsIdRouteImport } from './routes/goals.$id'
 import { Route as GoalsNewRouteImport } from './routes/goals.new'
+import { Route as InvestmentsIndexRouteImport } from './routes/investments.index'
+import { Route as InvestmentsSecurityRouteImport } from './routes/investments.$security'
+import { Route as RecurringIndexRouteImport } from './routes/recurring.index'
+import { Route as RecurringKeyRouteImport } from './routes/recurring.$key'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
-import { Route as ReportsBuilderRouteImport } from './routes/reports.builder'
 import { Route as ReportsTrendsRouteImport } from './routes/reports.trends'
 import { Route as RulesIndexRouteImport } from './routes/rules.index'
 import { Route as RulesIdRouteImport } from './routes/rules.$id'
 import { Route as RulesNewRouteImport } from './routes/rules.new'
 import { Route as TransactionsIndexRouteImport } from './routes/transactions.index'
 import { Route as TransactionsIdRouteImport } from './routes/transactions.$id'
-import { Route as TransactionsNewRouteImport } from './routes/transactions.new'
+import { Route as GoalsIdEditRouteImport } from './routes/goals.$id_.edit'
 import { Route as ReportsCategoriesCodeRouteImport } from './routes/reports.categories.$code'
 import { Route as ReportsMerchantsIndexRouteImport } from './routes/reports.merchants.index'
 import { Route as ReportsMerchantsKeyRouteImport } from './routes/reports.merchants.$key'
@@ -46,16 +47,6 @@ const BudgetsRoute = BudgetsRouteImport.update({
 const CashFlowRoute = CashFlowRouteImport.update({
   id: '/cash-flow',
   path: '/cash-flow',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InvestmentsRoute = InvestmentsRouteImport.update({
-  id: '/investments',
-  path: '/investments',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RecurringRoute = RecurringRouteImport.update({
-  id: '/recurring',
-  path: '/recurring',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -88,14 +79,29 @@ const GoalsNewRoute = GoalsNewRouteImport.update({
   path: '/goals/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvestmentsIndexRoute = InvestmentsIndexRouteImport.update({
+  id: '/investments/',
+  path: '/investments/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvestmentsSecurityRoute = InvestmentsSecurityRouteImport.update({
+  id: '/investments/$security',
+  path: '/investments/$security',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecurringIndexRoute = RecurringIndexRouteImport.update({
+  id: '/recurring/',
+  path: '/recurring/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecurringKeyRoute = RecurringKeyRouteImport.update({
+  id: '/recurring/$key',
+  path: '/recurring/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsIndexRoute = ReportsIndexRouteImport.update({
   id: '/reports/',
   path: '/reports/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsBuilderRoute = ReportsBuilderRouteImport.update({
-  id: '/reports/builder',
-  path: '/reports/builder',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsTrendsRoute = ReportsTrendsRouteImport.update({
@@ -128,9 +134,9 @@ const TransactionsIdRoute = TransactionsIdRouteImport.update({
   path: '/transactions/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TransactionsNewRoute = TransactionsNewRouteImport.update({
-  id: '/transactions/new',
-  path: '/transactions/new',
+const GoalsIdEditRoute = GoalsIdEditRouteImport.update({
+  id: '/goals/$id_/edit',
+  path: '/goals/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsCategoriesCodeRoute = ReportsCategoriesCodeRouteImport.update({
@@ -153,23 +159,24 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
-  '/investments': typeof InvestmentsRoute
-  '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
-  '/reports/builder': typeof ReportsBuilderRoute
+  '/investments/$security': typeof InvestmentsSecurityRoute
+  '/recurring/$key': typeof RecurringKeyRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
-  '/transactions/new': typeof TransactionsNewRoute
   '/accounts/': typeof AccountsIndexRoute
   '/goals/': typeof GoalsIndexRoute
+  '/investments/': typeof InvestmentsIndexRoute
+  '/recurring/': typeof RecurringIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/rules/': typeof RulesIndexRoute
   '/transactions/': typeof TransactionsIndexRoute
+  '/goals/$id/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants/': typeof ReportsMerchantsIndexRoute
@@ -178,23 +185,24 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
-  '/investments': typeof InvestmentsRoute
-  '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
-  '/reports/builder': typeof ReportsBuilderRoute
+  '/investments/$security': typeof InvestmentsSecurityRoute
+  '/recurring/$key': typeof RecurringKeyRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
-  '/transactions/new': typeof TransactionsNewRoute
   '/accounts': typeof AccountsIndexRoute
   '/goals': typeof GoalsIndexRoute
+  '/investments': typeof InvestmentsIndexRoute
+  '/recurring': typeof RecurringIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/rules': typeof RulesIndexRoute
   '/transactions': typeof TransactionsIndexRoute
+  '/goals/$id/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants': typeof ReportsMerchantsIndexRoute
@@ -204,23 +212,24 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
-  '/investments': typeof InvestmentsRoute
-  '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
-  '/reports/builder': typeof ReportsBuilderRoute
+  '/investments/$security': typeof InvestmentsSecurityRoute
+  '/recurring/$key': typeof RecurringKeyRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
-  '/transactions/new': typeof TransactionsNewRoute
   '/accounts/': typeof AccountsIndexRoute
   '/goals/': typeof GoalsIndexRoute
+  '/investments/': typeof InvestmentsIndexRoute
+  '/recurring/': typeof RecurringIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/rules/': typeof RulesIndexRoute
   '/transactions/': typeof TransactionsIndexRoute
+  '/goals/$id_/edit': typeof GoalsIdEditRoute
   '/reports/categories/$code': typeof ReportsCategoriesCodeRoute
   '/reports/merchants/$key': typeof ReportsMerchantsKeyRoute
   '/reports/merchants/': typeof ReportsMerchantsIndexRoute
@@ -231,23 +240,24 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
-    | '/investments'
-    | '/recurring'
     | '/settings'
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
-    | '/reports/builder'
+    | '/investments/$security'
+    | '/recurring/$key'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
-    | '/transactions/new'
     | '/accounts/'
     | '/goals/'
+    | '/investments/'
+    | '/recurring/'
     | '/reports/'
     | '/rules/'
     | '/transactions/'
+    | '/goals/$id/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants/'
@@ -256,23 +266,24 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
-    | '/investments'
-    | '/recurring'
     | '/settings'
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
-    | '/reports/builder'
+    | '/investments/$security'
+    | '/recurring/$key'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
-    | '/transactions/new'
     | '/accounts'
     | '/goals'
+    | '/investments'
+    | '/recurring'
     | '/reports'
     | '/rules'
     | '/transactions'
+    | '/goals/$id/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants'
@@ -281,23 +292,24 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
-    | '/investments'
-    | '/recurring'
     | '/settings'
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
-    | '/reports/builder'
+    | '/investments/$security'
+    | '/recurring/$key'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
-    | '/transactions/new'
     | '/accounts/'
     | '/goals/'
+    | '/investments/'
+    | '/recurring/'
     | '/reports/'
     | '/rules/'
     | '/transactions/'
+    | '/goals/$id_/edit'
     | '/reports/categories/$code'
     | '/reports/merchants/$key'
     | '/reports/merchants/'
@@ -307,23 +319,24 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BudgetsRoute: typeof BudgetsRoute
   CashFlowRoute: typeof CashFlowRoute
-  InvestmentsRoute: typeof InvestmentsRoute
-  RecurringRoute: typeof RecurringRoute
   SettingsRoute: typeof SettingsRoute
   AccountsIdRoute: typeof AccountsIdRoute
   GoalsIdRoute: typeof GoalsIdRoute
   GoalsNewRoute: typeof GoalsNewRoute
-  ReportsBuilderRoute: typeof ReportsBuilderRoute
+  InvestmentsSecurityRoute: typeof InvestmentsSecurityRoute
+  RecurringKeyRoute: typeof RecurringKeyRoute
   ReportsTrendsRoute: typeof ReportsTrendsRoute
   RulesIdRoute: typeof RulesIdRoute
   RulesNewRoute: typeof RulesNewRoute
   TransactionsIdRoute: typeof TransactionsIdRoute
-  TransactionsNewRoute: typeof TransactionsNewRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
   GoalsIndexRoute: typeof GoalsIndexRoute
+  InvestmentsIndexRoute: typeof InvestmentsIndexRoute
+  RecurringIndexRoute: typeof RecurringIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   RulesIndexRoute: typeof RulesIndexRoute
   TransactionsIndexRoute: typeof TransactionsIndexRoute
+  GoalsIdEditRoute: typeof GoalsIdEditRoute
   ReportsCategoriesCodeRoute: typeof ReportsCategoriesCodeRoute
   ReportsMerchantsKeyRoute: typeof ReportsMerchantsKeyRoute
   ReportsMerchantsIndexRoute: typeof ReportsMerchantsIndexRoute
@@ -350,20 +363,6 @@ declare module '@tanstack/react-router' {
       path: '/cash-flow'
       fullPath: '/cash-flow'
       preLoaderRoute: typeof CashFlowRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/investments': {
-      id: '/investments'
-      path: '/investments'
-      fullPath: '/investments'
-      preLoaderRoute: typeof InvestmentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/recurring': {
-      id: '/recurring'
-      path: '/recurring'
-      fullPath: '/recurring'
-      preLoaderRoute: typeof RecurringRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -408,18 +407,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GoalsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/investments/': {
+      id: '/investments/'
+      path: '/investments'
+      fullPath: '/investments/'
+      preLoaderRoute: typeof InvestmentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/investments/$security': {
+      id: '/investments/$security'
+      path: '/investments/$security'
+      fullPath: '/investments/$security'
+      preLoaderRoute: typeof InvestmentsSecurityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recurring/': {
+      id: '/recurring/'
+      path: '/recurring'
+      fullPath: '/recurring/'
+      preLoaderRoute: typeof RecurringIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recurring/$key': {
+      id: '/recurring/$key'
+      path: '/recurring/$key'
+      fullPath: '/recurring/$key'
+      preLoaderRoute: typeof RecurringKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/': {
       id: '/reports/'
       path: '/reports'
       fullPath: '/reports/'
       preLoaderRoute: typeof ReportsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports/builder': {
-      id: '/reports/builder'
-      path: '/reports/builder'
-      fullPath: '/reports/builder'
-      preLoaderRoute: typeof ReportsBuilderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports/trends': {
@@ -464,11 +484,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransactionsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/transactions/new': {
-      id: '/transactions/new'
-      path: '/transactions/new'
-      fullPath: '/transactions/new'
-      preLoaderRoute: typeof TransactionsNewRouteImport
+    '/goals/$id_/edit': {
+      id: '/goals/$id_/edit'
+      path: '/goals/$id/edit'
+      fullPath: '/goals/$id/edit'
+      preLoaderRoute: typeof GoalsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports/categories/$code': {
@@ -499,23 +519,24 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BudgetsRoute: BudgetsRoute,
   CashFlowRoute: CashFlowRoute,
-  InvestmentsRoute: InvestmentsRoute,
-  RecurringRoute: RecurringRoute,
   SettingsRoute: SettingsRoute,
   AccountsIdRoute: AccountsIdRoute,
   GoalsIdRoute: GoalsIdRoute,
   GoalsNewRoute: GoalsNewRoute,
-  ReportsBuilderRoute: ReportsBuilderRoute,
+  InvestmentsSecurityRoute: InvestmentsSecurityRoute,
+  RecurringKeyRoute: RecurringKeyRoute,
   ReportsTrendsRoute: ReportsTrendsRoute,
   RulesIdRoute: RulesIdRoute,
   RulesNewRoute: RulesNewRoute,
   TransactionsIdRoute: TransactionsIdRoute,
-  TransactionsNewRoute: TransactionsNewRoute,
   AccountsIndexRoute: AccountsIndexRoute,
   GoalsIndexRoute: GoalsIndexRoute,
+  InvestmentsIndexRoute: InvestmentsIndexRoute,
+  RecurringIndexRoute: RecurringIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   RulesIndexRoute: RulesIndexRoute,
   TransactionsIndexRoute: TransactionsIndexRoute,
+  GoalsIdEditRoute: GoalsIdEditRoute,
   ReportsCategoriesCodeRoute: ReportsCategoriesCodeRoute,
   ReportsMerchantsKeyRoute: ReportsMerchantsKeyRoute,
   ReportsMerchantsIndexRoute: ReportsMerchantsIndexRoute,

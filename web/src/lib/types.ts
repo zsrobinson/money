@@ -441,6 +441,8 @@ export type RecurringDetail = Recurring & {
   averageCents: number
   yearCents: number
   monthlyCents: number
+  /** A hand edit exists; deleting it returns the item to detection. */
+  edited: boolean
   missed: number
   upcoming: { date: string; amountCents: number }[]
   transactions: Txn[]

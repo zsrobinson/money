@@ -412,9 +412,15 @@ test("recurring: calendar with paid and due, expected amounts, marking by hand",
     await call("GET", `/recurring/${encodeURIComponent(item.key)}`)
   ).json
   assert.equal(detail.amountCents, -12345)
+  assert.equal(detail.edited, true)
   assert.ok(detail.transactions.length > 0)
   assert.ok(detail.upcoming.length > 0)
   await call("DELETE", `/recurring/${encodeURIComponent(item.key)}`)
+  assert.equal(
+    (await call("GET", `/recurring/${encodeURIComponent(item.key)}`)).json
+      .edited,
+    false
+  )
   // A merchant seen once becomes recurring when marked by hand.
   const once = model
     .get()
@@ -433,6 +439,13 @@ test("recurring: calendar with paid and due, expected amounts, marking by hand",
   const mine = items.find((i: { key: string }) => i.key === once.merchantKey)
   assert.equal(mine.cadence, "yearly")
   assert.equal(mine.manual, true)
+  // Its page works with a single charge.
+  const one = (
+    await call("GET", `/recurring/${encodeURIComponent(once.merchantKey)}`)
+  ).json
+  assert.equal(one.count, 1)
+  assert.equal(one.transactions.length, 1)
+  assert.ok(one.upcoming.length > 0)
   await call("DELETE", `/recurring/${encodeURIComponent(once.merchantKey)}`)
 })
 

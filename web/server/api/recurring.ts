@@ -170,6 +170,8 @@ export function registerRecurring(api: Hono, ctx: Ctx) {
         .filter((h) => h.date > addDays(m.today, -365))
         .reduce((s, h) => s + h.amountCents, 0),
       monthlyCents: Math.round(monthly(item)),
+      /** A hand edit exists, so DELETE returns it to detection. */
+      edited: recurringOverrides().has(key),
       missed: past.filter((o) => o.state === "missed").length,
       upcoming: upcoming.map((date) => ({
         date,
