@@ -21,9 +21,16 @@ import { EmptyState, Loading } from "@/components/money"
 import { ruleParts, RulesHelp } from "@/components/rules"
 import { useCategoryLabels } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
-import { pluralize } from "@/lib/format"
+import { fullDate, pluralize } from "@/lib/format"
 import { useSend } from "@/lib/mutations"
 import { accountsQuery, rulesQuery } from "@/lib/queries"
+
+/** Peer payments from someone count as transfers, not spending. */
+const PEER_TO_TRANSFERS = {
+  flow: "peer_payment",
+  merchant: "",
+  category: "bank_transfer",
+} as const
 
 export const Route = createFileRoute("/rules/")({
   staticData: { crumbs: [{ label: "Rules", to: "/rules" }] },
@@ -119,6 +126,7 @@ function Rules() {
                     {r.enabled
                       ? `${pluralize(r.matches ?? 0, "transaction")} match`
                       : "Off"}
+                    {r.appliesFrom ? ` · from ${fullDate(r.appliesFrom)}` : ""}
                   </span>
                 </Link>
                 <div className="flex shrink-0 items-center gap-0.5">
@@ -188,17 +196,27 @@ function Rules() {
           <EmptyState
             title="No rules yet"
             action={
-              <Button
-                size="sm"
-                render={<Link to="/rules/new" />}
-                nativeButton={false}
-              >
-                Create a rule
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  size="sm"
+                  render={<Link to="/rules/new" />}
+                  nativeButton={false}
+                >
+                  Create rule
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  render={<Link to="/rules/new" search={PEER_TO_TRANSFERS} />}
+                  nativeButton={false}
+                >
+                  Peer payments → Transfers
+                </Button>
+              </div>
             }
           >
-            Rules recategorize, rename, tag or hide matching transactions, past
-            and future.
+            Rules recategorize, rename, tag, split or hide matching
+            transactions.
           </EmptyState>
         )}
       </Card>
