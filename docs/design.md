@@ -138,3 +138,18 @@ windows, but never overwrite bank posting dates or the evidence used to match
 internal transfers. Imported wallet rows use the same stable opaque identifiers
 and reporting evaluator, including custom categories, splits and hidden flags.
 Schema v3 adds optional date edits; v2 remains readable during rolling upgrades.
+
+Schema v4 (`web/docs/overrides.md`) adds built-in category merges, custom
+top-level categories, more rule conditions, rule date scope, percent splits and
+manual accounts. Sync applies every part that changes aggregates; budgets,
+goals, icons and views stay app-only. Unknown or orphaned custom codes count as
+`other`, as in the app, rather than failing publication (v2/v3 still fail
+closed). Manual accounts become one virtual `file_import` source labelled
+`Manual entries`; account names and manual merchant text never leave the
+reporting copy, and manual rows stay out of merchant windows like statement
+wallet rows. `tests/overrides-v4-vectors.json` holds evaluator vectors shared
+with the web tests.
+
+The detail snapshot (meta `schema_version` 2) adds `investment_transactions`
+and `liabilities`. Both come from optional Plaid calls that never fail an
+item, and neither reaches MCP.

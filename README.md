@@ -52,6 +52,9 @@ paste values into commands, chat, Git or logs. The separate temporary MCP proces
 stopped. Public SQLite bytes, decoded fields and responses are scanned against
 real source strings retained only in checker memory. Short source strings use
 whole-token checks to avoid accidental substrings in security names/types.
+The checker also syncs Sandbox investment transactions and reports only their
+row count; liabilities are not exercised there because Sandbox Item creation
+stays limited to transactions and investments.
 
 Sandbox verification uses invented upstream data and does not establish production
 institution or payment-wallet support.
@@ -59,11 +62,15 @@ institution or payment-wallet support.
 ## Private ingestion
 
 Plaid requests only transactions and investments in Link; no auth, identity,
-transfer, payments or other products. Nine normal read-only endpoints are allowed:
+transfer, payments or other products. Liabilities is accepted only as an
+additional consent on an existing Item in update mode (below). Eleven normal
+read-only endpoints are allowed:
 `/link/token/create`, `/item/public_token/exchange`, `/accounts/get`,
 `/accounts/balance/get` (disabled to avoid paid refresh), `/transactions/sync`,
 `/transactions/recurring/get` (optional, with cadence fallback),
-`/investments/holdings/get`, `/item/get`, `/institutions/get_by_id`.
+`/investments/holdings/get`, `/investments/transactions/get` (optional),
+`/liabilities/get` (optional, consented Items only), `/item/get`,
+`/institutions/get_by_id`.
 `/sandbox/public_token/create` is an explicit exception only for a Sandbox-initialized
 client, exact Sandbox host and explicit `PLAID_ENV=sandbox`. Production, development,
 missing env and non-approved products fail closed before HTTP. Cached balances
@@ -121,9 +128,61 @@ in Plaid's native search without requiring a developer institution ID. The optio
 name hint refuses wrong-bank selection before authentication; `--institution ID`
 still supports verified IDs and is required for update mode. Already-linked IDs
 are blocked in the browser and before exchange; named duplicate feeds are rejected
-before token creation. The helper never asks for extra products. Close it after
+before token creation. The helper never asks for extra products beyond an explicit
+`--add-product liabilities` consent in update mode. Close it after
 linking; do not expose it through a public tunnel. Avoid creating duplicate Trial
 Items: removing an Item never restores its lifetime slot.
+
+### Investment transactions and credit card bills (web only)
+
+Items with the Investments product also fetch `/investments/transactions/get`
+for Plaid's 24-month window (offset pagination, 500 per page). No re-link is
+needed: Plaid's Investments product covers "holding, security, and transactions
+data" ([Investments](https://plaid.com/docs/investments/); see also
+[`/investments/transactions/get`](https://plaid.com/docs/api/products/investments/#investmentstransactionsget)).
+Until Plaid has the history it may answer `PRODUCT_NOT_READY`; that and any
+other error for this call are skipped and the previous rows kept, without
+failing the item.
+
+Credit card bills need the Liabilities product, which existing Items lack.
+To add consent to an existing Item (no new Item, no Trial slot):
+
+1. Pause the sync timer; the helper holds the private-state lock while open.
+2. As the sync identity, with the sync environment (Production Plaid keys,
+   `PLAIDMCP_PRIVATE`), run the helper with the Item's verified institution id:
+
+   ```sh
+   python link.py --update --institution INSTITUTION_ID --add-product liabilities
+   ```
+
+3. Through an SSH tunnel to 127.0.0.1:8768, open the helper, choose the same
+   institution and approve the extra consent. Stop the helper once it reports
+   "Linked".
+4. Run a sync, then resume the timer. `/liabilities/get` runs from that sync on.
+
+The helper sends the access token with `additional_consented_products` and no
+`products`, the documented way to add consent in update mode
+([update mode](https://plaid.com/docs/link/update-mode/#requesting-additional-consented-products));
+no token exchange happens. Only after Link succeeds does it add `liabilities` to
+the Item's stored products. If the Plaid client is not approved for
+Liabilities, token creation fails with a Plaid error code and nothing is
+recorded. Until consent exists, or when an institution has no liabilities
+data, the call is skipped and the item stays healthy. The production session
+daemon only starts new-Item Link, so run update mode directly as above.
+
+Both feeds publish only to the detail snapshot:
+`investment_transactions(id, account_id, security_id, date, type, subtype,
+quantity, price, amount_cents, fees_cents)` and `liabilities(account_id, kind,
+last_statement_balance_cents, last_statement_date, minimum_payment_cents,
+next_payment_due_date, last_payment_cents, last_payment_date, apr_percent,
+is_overdue)`. Ids are opaque and `security_id` matches holdings.
+`amount_cents` is Plaid's amount negated like transactions (cash into the
+account positive, so a buy is negative and a dividend positive); `fees_cents`
+keeps Plaid's sign (a charged fee is positive). Liabilities cover credit cards
+(purchase APR when listed, else the first APR), student loans and mortgages
+(next monthly payment as the minimum, overdue when an amount is past due).
+Transaction names, account numbers, addresses, loan and servicer names are
+never stored.
 
 ## Merchant totals and subscription candidates
 
@@ -312,6 +371,14 @@ data in a new directory, including accounts, transactions and valuation history.
 It refuses existing output and system deployment directories. Use only this or
 `web/`'s fixture generator for local development and screenshots. Never point a
 fixture server at production state.
+
+Sync reads app schemas 2, 3 and 4 (`web/docs/overrides.md`). From v4, manual
+accounts, balances and transactions join MCP aggregates as one `file_import`
+source labelled `Manual entries`, with generated type labels and ids derived
+from the app's ids; names and manual merchant text never leave sync. Manual
+transactions follow the same rules, edits and splits by id and never become
+named merchants. The detail snapshot is meta `schema_version` 2; peer payments
+there sit in the `expense` group because the web app counts them in spending.
 
 Daily observations record successful sync balances and holdings. Reconstructed
 cash/liability history is explicitly estimated; it never replaces observations.
