@@ -158,16 +158,18 @@ function GoalPage() {
               },
             }}
             dashed={["projection"]}
-            // Labels sit at the left, clear of the projection's last stretch.
-            references={[
+            // A payoff's target is the $0 baseline, which needs no line.
+            references={
               g.kind === "payoff"
-                ? { value: 0, label: "Paid off", side: "left" }
-                : {
-                    value: g.targetCents / 100,
-                    label: `Target ${money(g.targetCents, { whole: true })}`,
-                    side: "left",
-                  },
-            ]}
+                ? []
+                : [
+                    {
+                      value: g.targetCents / 100,
+                      label: `Target ${money(g.targetCents, { whole: true })}`,
+                      side: "left",
+                    },
+                  ]
+            }
             markers={
               g.targetDate
                 ? [{ time: epoch(g.targetDate), label: "Target date" }]

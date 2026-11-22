@@ -96,7 +96,9 @@ export function GoalsCard({ goals }: { goals: Goal[] }) {
     <SectionCard
       title="Goals"
       flush
-      action={<CardLink to="/goals">All goals</CardLink>}
+      action={
+        goals.length ? <CardLink to="/goals">All goals</CardLink> : undefined
+      }
     >
       {goals.length ? (
         <ul className="flex flex-col border-t">

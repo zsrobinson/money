@@ -337,7 +337,7 @@ function ItemView({ item: i }: { item: RecurringDetail }) {
                       then{" "}
                       {i.upcoming
                         .slice(1, 3)
-                        .map((u) => shortDate(u.date))
+                        .map((u) => shortDate(u.date, today))
                         .join(", ")}
                     </span>
                   ) : null}
