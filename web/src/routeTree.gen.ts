@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BudgetsRouteImport } from './routes/budgets'
 import { Route as CashFlowRouteImport } from './routes/cash-flow'
+import { Route as CategoriesRouteImport } from './routes/categories'
 import { Route as InvestmentsRouteImport } from './routes/investments'
 import { Route as RecurringRouteImport } from './routes/recurring'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -44,6 +45,11 @@ const BudgetsRoute = BudgetsRouteImport.update({
 const CashFlowRoute = CashFlowRouteImport.update({
   id: '/cash-flow',
   path: '/cash-flow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CategoriesRoute = CategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvestmentsRoute = InvestmentsRouteImport.update({
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
+  '/categories': typeof CategoriesRoute
   '/investments': typeof InvestmentsRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
+  '/categories': typeof CategoriesRoute
   '/investments': typeof InvestmentsRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/budgets': typeof BudgetsRoute
   '/cash-flow': typeof CashFlowRoute
+  '/categories': typeof CategoriesRoute
   '/investments': typeof InvestmentsRoute
   '/recurring': typeof RecurringRoute
   '/settings': typeof SettingsRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
+    | '/categories'
     | '/investments'
     | '/recurring'
     | '/settings'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
+    | '/categories'
     | '/investments'
     | '/recurring'
     | '/settings'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/'
     | '/budgets'
     | '/cash-flow'
+    | '/categories'
     | '/investments'
     | '/recurring'
     | '/settings'
@@ -283,6 +295,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BudgetsRoute: typeof BudgetsRoute
   CashFlowRoute: typeof CashFlowRoute
+  CategoriesRoute: typeof CategoriesRoute
   InvestmentsRoute: typeof InvestmentsRoute
   RecurringRoute: typeof RecurringRoute
   SettingsRoute: typeof SettingsRoute
@@ -324,6 +337,13 @@ declare module '@tanstack/react-router' {
       path: '/cash-flow'
       fullPath: '/cash-flow'
       preLoaderRoute: typeof CashFlowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/categories': {
+      id: '/categories'
+      path: '/categories'
+      fullPath: '/categories'
+      preLoaderRoute: typeof CategoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/investments': {
@@ -459,6 +479,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BudgetsRoute: BudgetsRoute,
   CashFlowRoute: CashFlowRoute,
+  CategoriesRoute: CategoriesRoute,
   InvestmentsRoute: InvestmentsRoute,
   RecurringRoute: RecurringRoute,
   SettingsRoute: SettingsRoute,
