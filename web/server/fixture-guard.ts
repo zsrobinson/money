@@ -67,3 +67,22 @@ export function fixturePaths(
     app: file(env.MONEY_FIXTURE_APP || "app.sqlite", false),
   }
 }
+
+const PRODUCTION_PATHS = ["/var/lib/money-detail/", "/var/lib/money-app/"]
+const isProduction = (path: string | undefined) =>
+  Boolean(path) &&
+  PRODUCTION_PATHS.some((root) => resolve(path!).startsWith(root))
+
+/**
+ * The real databases open only under NODE_ENV=production (the systemd unit),
+ * and production refuses anything else, so development or test tooling can
+ * never point at real data by accident.
+ */
+export function assertProductionPaths(env: Record<string, string | undefined>) {
+  const paths = [env.MONEY_DETAIL_DB, env.MONEY_APP_DB]
+  if (env.NODE_ENV === "production") {
+    if (!paths.every(isProduction))
+      throw new Error("Production uses only the production databases")
+  } else if (paths.some(isProduction))
+    throw new Error("Development and tests cannot open production databases")
+}
