@@ -14,7 +14,7 @@ def test_detail_is_separate_and_credential_free(snapshot,tmp_path):
     record_history(db,'2026-10-03');reconstruct_history(db,'2026-10-03')
     target=tmp_path/'detail.sqlite';publish(db,target)
     with sqlite3.connect(target) as out:
-        assert out.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()==('1',)
+        assert out.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()==('2',)
         assert 'credentials' not in {r[0] for r in out.execute('SELECT name FROM sqlite_master')}
         assert out.execute('SELECT COUNT(*) FROM balance_history').fetchone()[0]>0
         assert out.execute('SELECT description,amount_cents FROM transactions WHERE id=?',(opaque('txn','bank','fixture-detail'),)).fetchone()==('Invented private description',-1925)
@@ -135,6 +135,8 @@ def test_development_fixture_has_repeatable_full_history(tmp_path):
         assert a.execute('SELECT COUNT(*) FROM transactions WHERE pending=1').fetchone()[0]>0
         assert a.execute('SELECT COUNT(*) FROM holding_history').fetchone()[0]>700
         assert a.execute("SELECT COUNT(*) FROM sources WHERE kind='file_import'").fetchone()[0]==1
+        assert a.execute('SELECT COUNT(*) FROM investment_transactions').fetchone()[0]==32
+        assert a.execute("SELECT kind,last_statement_balance_cents FROM liabilities").fetchall()==[('credit',110432)]
 
 
 def test_date_override_moves_all_reporting_periods_without_mutating_source(snapshot,tmp_path,monkeypatch):
