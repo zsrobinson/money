@@ -2,10 +2,10 @@ import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   Page,
-  PageActions,
   PageGrid,
   PageHeader,
   PageMeta,
+  PageStack,
   PageTitle,
 } from "@zsrobinson/shell"
 import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
@@ -18,13 +18,15 @@ import {
   Change,
   EmptyState,
   Loading,
-  Meter,
+  BudgetBar,
   MerchantMark,
   RangeSelect,
   SectionCard,
   Stat,
   StatRow,
 } from "@/components/money"
+import { useIsMobile } from "@zsrobinson/shell/hooks/use-mobile"
+import { useCategories } from "@/components/category-style"
 import { TxnRows } from "@/components/transactions"
 import { usePageTitle } from "@/lib/crumb"
 import {
@@ -62,6 +64,15 @@ function Dashboard() {
   const setRange = (r: Range) =>
     void navigate({ search: { range: r }, replace: true })
   const s = summary.data
+  const cats = useCategories()
+  const mobile = useIsMobile()
+  const today = meta.data?.today
+  const elapsed = today
+    ? Number(today.slice(8, 10)) /
+      new Date(
+        Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 0)
+      ).getUTCDate()
+    : 0
   const netPoints = (s?.netWorth.series ?? []).map((p) => ({
     time: epoch(p.date),
     net: p.net / 100,
@@ -74,20 +85,6 @@ function Dashboard() {
     <Page>
       <PageHeader>
         <PageTitle>Dashboard</PageTitle>
-        <PageActions>
-          {s?.unreviewed ? (
-            <Button
-              variant="outline"
-              size="sm"
-              render={
-                <Link to="/transactions" search={{ status: "unreviewed" }} />
-              }
-              nativeButton={false}
-            >
-              Review {s.unreviewed} transactions
-            </Button>
-          ) : null}
-        </PageActions>
       </PageHeader>
       {summary.isError ? (
         <QueryError
@@ -148,7 +145,7 @@ function Dashboard() {
             >
               <StatRow className="mb-4">
                 <Stat
-                  label="Spent"
+                  label="Spending"
                   detail={paceText(
                     s.month.spendingCents,
                     s.month.lastMonthSameDayCents
@@ -156,7 +153,7 @@ function Dashboard() {
                 >
                   <Amount cents={s.month.spendingCents} tone="plain" whole />
                 </Stat>
-                <Stat label="Earned">
+                <Stat label="Income">
                   <Amount cents={s.month.incomeCents} tone="plain" whole />
                 </Stat>
               </StatRow>
@@ -195,8 +192,12 @@ function Dashboard() {
                 <div className="flex flex-col gap-3">
                   <div className="mb-1 flex items-end justify-between gap-3">
                     <Stat
-                      label="Spent"
-                      detail={`of ${money(s.budget.budgetedCents, { whole: true })} budgeted`}
+                      label="Spent in budgets"
+                      detail={
+                        s.budget.unbudgetedCents
+                          ? `of ${money(s.budget.budgetedCents, { whole: true })} · + ${money(s.budget.unbudgetedCents, { whole: true })} outside`
+                          : `of ${money(s.budget.budgetedCents, { whole: true })}`
+                      }
                     >
                       {money(s.budget.spentCents, { whole: true })}
                     </Stat>
@@ -212,9 +213,14 @@ function Dashboard() {
                   </div>
                   {s.budget.rows.map((r) => (
                     <div key={r.code} className="flex flex-col gap-2">
-                      <BudgetMeter row={r} />
+                      <BudgetMeter row={r} elapsed={elapsed} />
                       {r.children.map((c) => (
-                        <BudgetMeter key={c.code} row={c} child />
+                        <BudgetMeter
+                          key={c.code}
+                          row={c}
+                          child
+                          elapsed={elapsed}
+                        />
                       ))}
                     </div>
                   ))}
@@ -247,6 +253,7 @@ function Dashboard() {
                   key: c.code,
                   label: c.label,
                   value: c.cents,
+                  color: cats.color(c.code),
                 }))}
                 onSelect={(code) =>
                   void navigate({
@@ -299,85 +306,111 @@ function Dashboard() {
               )}
             </SectionCard>
           </PageGrid>
-          <PageGrid layout="wide" className="items-stretch">
-            <SectionCard
-              title="Recent transactions"
-              flush
-              fill
-              action={<CardLink to="/transactions">All transactions</CardLink>}
-            >
-              <TxnRows items={s.recent} showAccount={false} />
-            </SectionCard>
-            <SectionCard
-              title="Accounts"
-              flush
-              fill
-              action={<CardLink to="/accounts">Accounts</CardLink>}
-              footer={
-                meta.data ? (
-                  <Freshness
-                    generatedAt={meta.data.generatedAt}
-                    stale={
-                      meta.data.sources.filter((x) => x.status !== "healthy")
-                        .length
-                    }
+          <PageGrid layout="wide">
+            <PageStack>
+              {s.review.length ? (
+                <SectionCard
+                  title={`Needs review · ${s.unreviewed}`}
+                  flush
+                  action={
+                    <CardLink
+                      to="/transactions"
+                      search={{ status: "unreviewed" }}
+                    >
+                      Review all
+                    </CardLink>
+                  }
+                >
+                  <TxnRows
+                    items={s.review}
+                    showAccount={false}
+                    grouped={false}
+                    editable
+                    linkSearch={{
+                      list: JSON.stringify({ status: "unreviewed" }),
+                    }}
                   />
-                ) : undefined
-              }
-            >
-              <AccountGroups accounts={s.accounts} />
-            </SectionCard>
-          </PageGrid>
-          {investments.data?.holdings.length ? (
-            <SectionCard
-              title="Investments"
-              action={<CardLink to="/investments">Holdings</CardLink>}
-            >
-              <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)] lg:items-center">
-                <StatRow className="lg:grid lg:grid-cols-1 lg:gap-y-4">
-                  <Stat label="Value">
-                    <Amount
-                      cents={investments.data.totalCents}
-                      tone="plain"
-                      whole
-                    />
-                  </Stat>
-                  <Stat label="Gain on cost">
-                    <Amount
-                      cents={investments.data.gainCents}
-                      tone="signed"
-                      whole
-                    />
-                  </Stat>
-                  {invPoints.length > 1 ? (
-                    <Stat label="3 months">
+                </SectionCard>
+              ) : null}
+              <SectionCard
+                title="Recent transactions"
+                flush
+                action={
+                  <CardLink to="/transactions">All transactions</CardLink>
+                }
+              >
+                <TxnRows
+                  items={mobile ? s.recent.slice(0, 5) : s.recent}
+                  showAccount={false}
+                />
+              </SectionCard>
+            </PageStack>
+            <PageStack>
+              {investments.data?.holdings.length ? (
+                <SectionCard
+                  title="Investments"
+                  action={<CardLink to="/investments">Holdings</CardLink>}
+                >
+                  <StatRow className="mb-3">
+                    <Stat label="Value">
                       <Amount
-                        cents={
-                          investments.data.series.at(-1)!.cents -
-                          investments.data.series[0].cents
-                        }
+                        cents={investments.data.totalCents}
+                        tone="plain"
+                        whole
+                      />
+                    </Stat>
+                    <Stat label="Gain on cost">
+                      <Amount
+                        cents={investments.data.gainCents}
                         tone="signed"
                         whole
                       />
                     </Stat>
-                  ) : null}
-                </StatRow>
-                <TrendChart
-                  label="Investment value, last 3 months"
-                  baseline="data"
-                  data={invPoints}
-                  config={{
-                    value: { label: "Value", color: "var(--chart-1)" },
-                  }}
-                  format={whole}
-                  formatTick={moneyTick}
-                  formatTime={epochFullDate}
-                  utc
-                  className="h-44"
-                />
-              </div>
-            </SectionCard>
-          ) : null}
+                    {investments.data.performance ? (
+                      <Stat label="Market, 3 months">
+                        <Amount
+                          cents={investments.data.performance.marketCents}
+                          tone="signed"
+                          whole
+                        />
+                      </Stat>
+                    ) : null}
+                  </StatRow>
+                  <TrendChart
+                    label="Investment value, last 3 months"
+                    baseline="data"
+                    data={invPoints}
+                    config={{
+                      value: { label: "Value", color: "var(--chart-1)" },
+                    }}
+                    format={whole}
+                    formatTick={moneyTick}
+                    formatTime={epochFullDate}
+                    utc
+                    className="h-32"
+                  />
+                </SectionCard>
+              ) : null}
+              <SectionCard
+                title="Accounts"
+                flush
+                action={<CardLink to="/accounts">Accounts</CardLink>}
+                footer={
+                  meta.data ? (
+                    <Freshness
+                      generatedAt={meta.data.generatedAt}
+                      stale={
+                        meta.data.sources.filter((x) => x.status !== "healthy")
+                          .length
+                      }
+                    />
+                  ) : undefined
+                }
+              >
+                <AccountGroups accounts={s.accounts} compact={mobile} />
+              </SectionCard>
+            </PageStack>
+          </PageGrid>
         </>
       )}
     </Page>
@@ -395,12 +428,13 @@ function paceText(spent: number, lastSameDay: number) {
 function BudgetMeter({
   row: r,
   child = false,
+  elapsed,
 }: {
   row: BudgetRow
   child?: boolean
+  elapsed: number
 }) {
   const limit = (r.totalBudgetCents ?? 0) + r.rolloverCents
-  const over = r.totalBudgetCents != null && r.spentCents > limit
   return (
     <Link
       to="/reports/categories/$code"
@@ -419,18 +453,52 @@ function BudgetMeter({
         </span>
       </span>
       {r.totalBudgetCents != null ? (
-        <Meter
+        <BudgetBar
           label={`${r.label} budget used`}
-          value={r.spentCents / (limit || 1)}
-          tone={over ? "over" : "default"}
+          spent={r.spentCents}
+          budget={limit}
+          elapsed={elapsed}
         />
       ) : null}
     </Link>
   )
 }
 
-function AccountGroups({ accounts }: { accounts: Account[] }) {
+/** Accounts by kind; `compact` shows only each kind's total, for a phone. */
+function AccountGroups({
+  accounts,
+  compact = false,
+}: {
+  accounts: Account[]
+  compact?: boolean
+}) {
   const kinds = ["Cash", "Credit cards", "Investments", "Loans", "Other"]
+  if (compact)
+    return (
+      <ul className="flex flex-col divide-y divide-border/70">
+        {kinds.map((kind) => {
+          const list = accounts.filter((a) => accountKind(a) === kind)
+          if (!list.length) return null
+          return (
+            <li
+              key={kind}
+              className="flex min-h-10 items-center justify-between px-5 py-2 text-sm"
+            >
+              <span>
+                {kind}{" "}
+                <span className="text-muted-foreground">· {list.length}</span>
+              </span>
+              <Amount
+                cents={list.reduce((sum, a) => sum + (a.balanceCents ?? 0), 0)}
+                tone="plain"
+                whole
+                className="font-medium"
+              />
+            </li>
+          )
+        })}
+      </ul>
+    )
   return (
     <div className="flex flex-col">
       {kinds.map((kind) => {
