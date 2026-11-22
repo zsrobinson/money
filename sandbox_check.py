@@ -72,6 +72,9 @@ class AuditClient(Client):
             if result.get(key): self.private_strings.add(result[key])
         item=result.get('item') or {}
         if item.get('item_id'): self.private_strings.add(item['item_id'])
+        for trade in result.get('investment_transactions',[]):
+            for key in ('investment_transaction_id','account_id','name','cancel_transaction_id'):
+                if isinstance(trade.get(key),str) and trade[key].strip(): self.private_strings.add(trade[key])
         for account in result.get('accounts',[]):
             for key in ('account_id','persistent_account_id','name','official_name'):
                 if account.get(key): self.private_strings.add(account[key])
@@ -268,10 +271,13 @@ async def check_mcp(run, client):
                 actual=sum(r['spending'] for r in q.cash_flow('category',start,end,include_peer_transfers=include)['data']['totals'])
                 if round(actual,2)!=total: raise CheckError('Transfer filtering mismatch')
             peer_count=db.execute("SELECT COUNT(*) FROM transactions WHERE detailed_category LIKE '%PEER_TRANSFER'").fetchone()[0]
+            # Optional web-detail feed: a count only, never rows or names.
+            investment_count=db.execute('SELECT COUNT(*) FROM web_investment_transactions').fetchone()[0]
             transfer_count=db.execute("SELECT COUNT(*) FROM transactions WHERE primary_category IN ('TRANSFER_IN','TRANSFER_OUT')").fetchone()[0]
         return {'tools_passed':len(samples),'pfc_categories':len(client.categories),
             'pfc_versions':sorted(client.category_versions),'privacy_scan':'passed',
             'transfer_rows_checked':transfer_count,'peer_rows_present':peer_count,'peer_shape_probe':'passed',
+            'investment_transactions_synced':investment_count,
             'totals':{'net_worth':round(sum(r['net_worth'] or 0 for r in samples['balance_summary']['data']['totals']),2),
                 'month_spending':baseline,
                 'holdings_value':round(sum(r['value'] or 0 for r in samples['holdings']['data']['totals']),2)}}

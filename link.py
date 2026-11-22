@@ -61,10 +61,14 @@ def history_days(value):
         raise argparse.ArgumentTypeError('History days must be an integer from 30 to 730') from None
 
 
-def token_payload(product, existing=None, days_requested=730):
+def token_payload(product, existing=None, days_requested=730, add_product=None):
     days=history_days(days_requested)
     payload={'client_name':'Plaid MCP','user':{'client_user_id':'local-owner'},'country_codes':['US'],'language':'en'}
-    if existing: payload['access_token']=existing[1]
+    if add_product and not existing: raise ValueError('Additional consent requires an existing Item')
+    if existing:
+        payload['access_token']=existing[1]
+        # Update mode asks only for consent; the product is added by its first call.
+        if add_product: payload['additional_consented_products']=[add_product]
     else:
         payload['products']=[product]
         if product=='transactions': payload['transactions']={'days_requested':days}
@@ -75,15 +79,18 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--institution',help='Optional verified institution ID; otherwise choose in the native Plaid Link search')
     parser.add_argument('--institution-name',help='Optional institution name hint to refuse wrong-bank selection before authentication')
-    parser.add_argument('--product',choices=['transactions','investments'],required=True)
+    parser.add_argument('--product',choices=['transactions','investments'],help='Product for a new Item (required unless --update)')
     parser.add_argument('--update',action='store_true',help='Re-link existing Item without consuming a slot')
+    parser.add_argument('--add-product',choices=['liabilities'],help='With --update: add consent for this product to the existing Item')
     parser.add_argument('--days-requested',type=history_days,default=730,help='Initial transactions history, 30–730 days (default 730)')
     args=parser.parse_args()
     if args.update and not args.institution: parser.error('--update requires --institution')
+    if not args.update and not args.product: parser.error('--product is required for a new Item')
+    if args.add_product and not args.update: parser.error('--add-product requires --update')
     client=Client()
     # Exclusive lock held for helper lifetime prevents duplicate helpers/sync races.
     with private_store() as db:
-        existing=db.execute('SELECT item,token FROM credentials WHERE institution_id=?',(args.institution,)).fetchone()
+        existing=db.execute('SELECT item,token,product FROM credentials WHERE institution_id=?',(args.institution,)).fetchone()
         csv_source=bool(db.execute("SELECT 1 FROM items WHERE id='venmo-csv'").fetchone())
         if args.institution_name and not args.institution:
             hint=re.sub(r'[^a-z0-9]','',args.institution_name.casefold())
@@ -122,7 +129,7 @@ def main():
                 try:
                     if self.path=='/token':
                         if Handler.issued: return self.reply(409,{'error':'Token already issued; restart helper to retry'})
-                        payload=token_payload(args.product,existing,args.days_requested)
+                        payload=token_payload(args.product,existing,args.days_requested,args.add_product)
                         Handler.stage='link_token_create'
                         result=client.call('/link/token/create',**payload)
                         Handler.issued=True
@@ -149,6 +156,10 @@ def main():
                         with db:
                             db.execute('INSERT INTO credentials VALUES(?,?,?,?,NULL)',(result['item_id'],institution,result['access_token'],args.product))
                             db.execute('INSERT INTO items VALUES(?,?,NULL,?)',(result['item_id'],name or institution,'INITIAL_SYNC_REQUIRED'))
+                    elif args.add_product:
+                        # Record consent only after Link succeeds; sync then calls the product endpoint.
+                        products=existing[2].split(',')
+                        with db: db.execute('UPDATE credentials SET product=? WHERE item=?',(','.join(products+[args.add_product] if args.add_product not in products else products),existing[0]))
                     Handler.completed=True
                     Handler.stage='linked'
                     return self.reply(200,{'linked':True})

@@ -13,6 +13,8 @@ Every response is `{as_of, sources, unreliable_sources, data}`:
 - `as_of`: object mapping opaque source id to ISO sync timestamp or null.
 - `sources`: array of `{id, institution, kind, as_of, status, data_kinds, freshness}`.
   `kind` is connection/file_import; `data_kinds` contains balances/spending/holdings.
+  Accounts kept by hand in the web app appear as one `file_import` source with
+  institution `Manual entries` (see list_accounts).
   Status is healthy / needs re-link / waiting for data / temporarily unavailable /
   source overlap needs review. Freshness is current / outdated / not synced.
 - `unreliable_sources`: source records that are non-healthy or older than the
@@ -86,6 +88,15 @@ default and nullable when opted in. Availability is available/historical/unassig
 Historical accounts have null balances and no balance data kind; their activity
 remains queryable. A statement wallet can provide spending without any balance;
 its unknown value makes net worth partial rather than inventing a zero.
+
+Manual accounts (web app schema v4) share one `Manual entries` source. Labels
+are generated from the manual type (`Cash`, `Credit`, `Loan`, `Investment`,
+`Property`, `Vehicle`, `Other`) plus an id suffix; app account names never
+appear. Types map to `depository`, `credit`, `loan`, `investment` or `other`.
+The balance is the latest stated balance plus later manual transactions, or
+null when the app has neither; a closed manual account is historical. Their ids
+are derived from the app's ids, so they are stable across syncs. Manual
+accounts are always in scope `own`.
 
 ### list_sources
 
@@ -181,6 +192,8 @@ coverage differs from earlier releases. All Venmo spending remains excluded. Ban
 payments and peer transfers never become merchants. For peer totals, use cash_flow
 with include_peer_transfers=true. Venmo is excluded entirely from named merchant totals. Peer transfers stay in
 the peer bucket and explicit bank moves remain transfer-classified. CSV notes/names remain discarded at parse time.
+Manual transactions from the web app never become merchants and do not join
+Other: like statement wallet rows, they count in cash_flow by category only.
 
 `recurring_only=true` finds **subscription candidates**, not proven subscriptions.
 The optional recurring endpoint supplies merchant-level patterns where available;

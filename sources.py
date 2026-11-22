@@ -152,6 +152,42 @@ class VenmoSource:
           'daily':db.execute(sql,(account,ref)).fetchall(),'holdings':[]}
 
 
+@dataclass
+class ManualSource:
+    """App-kept manual accounts, present only in a reporting copy (schema v4).
+
+    One virtual file_import source with a fixed institution label. Account ids
+    derive from the app's manual ids; labels are generated from type only.
+    """
+    key: str = 'manual'
+
+    def refresh(self,db,public): pass
+
+    def read_snapshot(self,db):
+        from detail import opaque
+        from datetime import datetime, timezone
+        ref=opaque('src','manual')
+        accounts=db.execute('SELECT id,type,subtype,currency,current,availability FROM reporting_manual_accounts ORDER BY id').fetchall()
+        if not accounts or ref in set(filter(None,os.environ.get('PLAIDMCP_DISABLED_SOURCES','').split(','))): return {}
+        from overrides import MANUAL_INSTITUTION
+        rows=[(aid,ref,subtype.replace('_',' ').title()+' '+aid[-6:]+(' (historical)' if availability=='historical' else ''),MANUAL_INSTITUTION,kind,subtype,currency,current,None,None,'',
+            json.dumps(['balances','spending'] if availability=='available' else ['spending']),availability) for aid,kind,subtype,currency,current,availability in accounts]
+        sql="""SELECT day,account_ref,?,category,detailed_category,currency,
+          SUM(CASE WHEN category='income' THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') THEN amount ELSE 0 END),
+          SUM(CASE WHEN category='bank_transfer' AND amount<0 THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category='bank_transfer' AND amount>=0 THEN amount ELSE 0 END),
+          SUM(CASE WHEN category='peer_payment' AND amount<0 THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category='peer_payment' AND amount>=0 THEN amount ELSE 0 END),COUNT(*),0,0,
+          SUM(CASE WHEN category NOT IN ('income','bank_transfer','peer_payment','internal_transfer') AND amount<0 THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category='income' THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category='internal_transfer' AND amount<0 THEN -amount ELSE 0 END),
+          SUM(CASE WHEN category='internal_transfer' AND amount>0 THEN amount ELSE 0 END)
+          FROM reporting_manual GROUP BY day,account_ref,category,detailed_category,currency"""
+        return {'sources':[(ref,MANUAL_INSTITUTION,'file_import',datetime.now(timezone.utc).isoformat(),'healthy',json.dumps(['balances','spending']))],
+          'accounts':rows,'daily':db.execute(sql,(ref,)).fetchall(),'holdings':[]}
+
+
 def enabled(db,key):
     disabled=set(filter(None,os.environ.get('PLAIDMCP_DISABLED_SOURCES','').split(',')))
     row=db.execute('SELECT ref FROM source_identity WHERE provider_ref=?',(key,)).fetchone()
@@ -159,7 +195,9 @@ def enabled(db,key):
 
 
 def snapshot_sources(db):
-    return [VenmoSource() if key=='venmo-csv' else PlaidSource(key) for key, in db.execute('SELECT id FROM items') if enabled(db,key)]
+    sources=[VenmoSource() if key=='venmo-csv' else PlaidSource(key) for key, in db.execute('SELECT id FROM items') if enabled(db,key)]
+    if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='reporting_manual_accounts'").fetchone(): sources.append(ManualSource())
+    return sources
 
 
 def refresh_sources(db,public,client_factory):

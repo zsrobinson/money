@@ -14,7 +14,7 @@ def test_detail_is_separate_and_credential_free(snapshot,tmp_path):
     record_history(db,'2026-10-03');reconstruct_history(db,'2026-10-03')
     target=tmp_path/'detail.sqlite';publish(db,target)
     with sqlite3.connect(target) as out:
-        assert out.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()==('1',)
+        assert out.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()==('2',)
         assert 'credentials' not in {r[0] for r in out.execute('SELECT name FROM sqlite_master')}
         assert out.execute('SELECT COUNT(*) FROM balance_history').fetchone()[0]>0
         assert out.execute('SELECT description,amount_cents FROM transactions WHERE id=?',(opaque('txn','bank','fixture-detail'),)).fetchone()==('Invented private description',-1925)
@@ -34,7 +34,7 @@ def test_rules_are_first_field_wins_snapshot_based_and_overrides_win():
     txn={'category':'food','merchant':'  Invented  SHOP ','description':None,'account_id':'acct_fixture','amount_cents':-500}
     rules=[({'merchant_contains':'invented shop'},{'category':'shopping'}),({'category':'shopping'},{'hide':True}),({'category':'food'},{'category':'housing','mark_reviewed':True})]
     result=evaluate(txn,rules,{'category':'travel','hidden':0})
-    assert result=={'category':'travel','merchant':txn['merchant'],'hidden':0,'reviewed':True}
+    assert result=={'category':'travel','merchant':txn['merchant'],'hidden':0,'reviewed':True,'split':None}
 
 
 def test_overrides_change_aggregate_without_disclosing_edits(snapshot,tmp_path,monkeypatch):
@@ -135,6 +135,8 @@ def test_development_fixture_has_repeatable_full_history(tmp_path):
         assert a.execute('SELECT COUNT(*) FROM transactions WHERE pending=1').fetchone()[0]>0
         assert a.execute('SELECT COUNT(*) FROM holding_history').fetchone()[0]>700
         assert a.execute("SELECT COUNT(*) FROM sources WHERE kind='file_import'").fetchone()[0]==1
+        assert a.execute('SELECT COUNT(*) FROM investment_transactions').fetchone()[0]==32
+        assert a.execute("SELECT kind,last_statement_balance_cents FROM liabilities").fetchall()==[('credit',110432)]
 
 
 def test_date_override_moves_all_reporting_periods_without_mutating_source(snapshot,tmp_path,monkeypatch):
@@ -174,3 +176,11 @@ def test_wallet_edits_dates_splits_and_hidden_use_same_rules(snapshot,tmp_path,m
     with sqlite3.connect(aggregate) as public:
         assert public.execute("SELECT SUM(spending) FROM daily WHERE category='fees' AND day='2026-10-31'").fetchone()==(4.0,)
     assert list(wallet_rows(db))==rows
+
+
+def test_peer_payments_publish_as_expense_group_for_web(snapshot,tmp_path):
+    db,_=snapshot
+    target=tmp_path/'detail.sqlite';publish(db,target)
+    with sqlite3.connect(target) as out:
+        groups=dict(out.execute('SELECT code,"group" FROM categories'))
+    assert groups['peer_payment']=='expense' and groups['bank_transfer']=='transfer' and groups['internal_transfer']=='transfer' and groups['income']=='income'

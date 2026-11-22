@@ -4,10 +4,11 @@ import fcntl
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from plaid_client import Client, PlaidError
 from store import connect, ingest_accounts, ingest_transactions, ingest_holdings, publish
+from detail import ingest_investment_transactions, ingest_liabilities
 
 ingest_accounts = telemetry.timed('store')(ingest_accounts)
 ingest_transactions = telemetry.timed('store')(ingest_transactions)
@@ -27,6 +28,31 @@ def private_store():
         try: yield db
         finally: db.close()
 
+def optional(db, step):
+    """Web-detail extras never fail an item: any error keeps the previous rows."""
+    db.execute('SAVEPOINT optional_detail')
+    try:
+        step()
+        db.execute('RELEASE optional_detail')
+    except Exception:
+        db.execute('ROLLBACK TO optional_detail');db.execute('RELEASE optional_detail')
+
+
+def investment_transactions(client, token, today=None):
+    """Fetch Plaid's 24-month window with offset pagination before any write."""
+    end = today or datetime.now(timezone.utc).date()
+    start = end - timedelta(days=730)
+    rows, securities = [], {}
+    for _ in range(200):
+        page = client.call('/investments/transactions/get',access_token=token,start_date=start.isoformat(),end_date=end.isoformat(),options={'count':500,'offset':len(rows)})
+        telemetry.count('pages')
+        securities.update({s['security_id']:s for s in page.get('securities',[])})
+        rows += page['investment_transactions']
+        if not page['investment_transactions'] or len(rows) >= page['total_investment_transactions']: break
+    else: raise PlaidError('PAGINATION_LIMIT')
+    return {'start_date':start.isoformat(),'investment_transactions':rows,'securities':list(securities.values())}
+
+
 def sync_item(db, client, row):
     original = client
     class MeasuredClient:
@@ -37,7 +63,7 @@ def sync_item(db, client, row):
     telemetry.count('items_count')
     item,institution_id,token,product,cursor = row
     products = set(product.split(','))
-    if not products or products - {'transactions','investments'}:
+    if not products & {'transactions','investments'} or products - {'transactions','investments','liabilities'}:
         raise ValueError('Unsupported stored sync products')
     backfill=os.environ.get('PLAIDMCP_BACKFILL_MERCHANTS','false').lower()=='true' and 'transactions' in products
     if backfill:cursor=None
@@ -72,6 +98,9 @@ def sync_item(db, client, row):
                     ingest_recurring(db,item,recurring)
                 if 'investments' in products:
                     ingest_holdings(db,item,client.call('/investments/holdings/get',access_token=token))
+                    optional(db,lambda:ingest_investment_transactions(db,item,investment_transactions(client,token)))
+                if 'liabilities' in products:
+                    optional(db,lambda:ingest_liabilities(db,item,client.call('/liabilities/get',access_token=token)))
                 now = datetime.now(timezone.utc).isoformat()
                 db.execute('UPDATE items SET as_of=?,error=NULL WHERE id=?',(now,item))
             return
