@@ -76,7 +76,7 @@ function timeline(items: Recurring[], today: string, days: number) {
 
 function RecurringPage() {
   usePageTitle("Recurring")
-  const q = useQuery(recurringQuery)
+  const q = useQuery(recurringQuery())
   const d = q.data
   const items = d?.items ?? []
   const active = items.filter((i) => i.status === "active")

@@ -40,7 +40,7 @@ const MONTH_MS = 30.44 * 86_400_000
 /** History, then a dashed projection at the recent pace toward the target. */
 function goalPoints(g: Goal, today: string) {
   type Point = { time: number; value: number | null; projection: number | null }
-  const history: Point[] = g.series.map((p) => ({
+  const history: Point[] = (g.series ?? []).map((p) => ({
     time: epoch(p.date),
     value: p.cents / 100,
     projection: null,

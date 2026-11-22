@@ -553,4 +553,51 @@ export function registerTransactions(api: Hono, ctx: Ctx) {
     })
     return c.json({ ok: true })
   })
+
+  /** Saved transaction filters, shown as quick views on the list. */
+  api.get("/views", (c) =>
+    c.json(
+      (
+        db
+          .prepare("SELECT * FROM saved_views ORDER BY position, name")
+          .all() as { id: string; name: string; search_json: string }[]
+      ).map((v) => ({
+        id: v.id,
+        name: v.name,
+        search: JSON.parse(v.search_json) as Record<string, string>,
+      }))
+    )
+  )
+  api.post("/views", async (c) => {
+    const b = await body(
+      c,
+      z
+        .object({
+          name: z.string().trim().min(1).max(40),
+          search: z.record(z.string().max(40), z.string().max(400)),
+        })
+        .strict()
+    )
+    const viewId = id("view")
+    write(() => {
+      const max = (
+        db
+          .prepare("SELECT COALESCE(MAX(position), -1) AS p FROM saved_views")
+          .get() as { p: number }
+      ).p
+      db.prepare("INSERT INTO saved_views VALUES(?,?,?,?)").run(
+        viewId,
+        b.name,
+        JSON.stringify(b.search),
+        max + 1
+      )
+    })
+    return c.json({ id: viewId }, 201)
+  })
+  api.delete("/views/:id", (c) => {
+    write(() =>
+      db.prepare("DELETE FROM saved_views WHERE id=?").run(c.req.param("id"))
+    )
+    return c.json({ ok: true })
+  })
 }
