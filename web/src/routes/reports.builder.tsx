@@ -3,7 +3,19 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Page, PageHeader, PageTitle } from "@zsrobinson/shell"
 import { DonutChart, TrendChart } from "@zsrobinson/shell/blocks/chart-card"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
+import { Badge } from "@zsrobinson/shell/ui/badge"
+import { Button } from "@zsrobinson/shell/ui/button"
 import { Card } from "@zsrobinson/shell/ui/card"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@zsrobinson/shell/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@zsrobinson/shell/ui/tooltip"
 import {
   Table,
   TableBody,
@@ -19,6 +31,8 @@ import {
   ChartLineIcon,
   ChartPieIcon,
   TableIcon,
+  SlidersHorizontalIcon,
+  XIcon,
 } from "lucide-react"
 import { z } from "zod"
 import { CategoryPicker } from "@/components/category-picker"
@@ -82,14 +96,30 @@ const MEASURE_LABEL: Record<Measure, string> = {
   income: "Income",
   net: "Cash flow",
 }
+/** "Category" is top-level (children inside); "Subcategory" splits them. */
 const BY_LABEL: Record<GroupBy, string> = {
-  group: "Group",
-  category: "Category",
+  group: "Category",
+  category: "Subcategory",
   merchant: "Merchant",
   tag: "Tag",
   account: "Account",
   none: "Nothing",
 }
+const BY_ORDER: GroupBy[] = [
+  "group",
+  "category",
+  "merchant",
+  "tag",
+  "account",
+  "none",
+]
+const CHART_OPTIONS = [
+  { value: "bar", label: "Bars side by side", icon: ChartColumnBigIcon },
+  { value: "stacked", label: "Stacked bars", icon: ChartColumnStackedIcon },
+  { value: "line", label: "Lines", icon: ChartLineIcon },
+  { value: "donut", label: "Donut", icon: ChartPieIcon },
+  { value: "table", label: "Table", icon: TableIcon },
+] as const
 const TAG_HUE: Record<string, string> = {
   re: "red",
   or: "orange",
@@ -176,14 +206,50 @@ function Builder() {
   })
   const d = q.data
   const format = (c: number) => money(c, { whole: true })
+  type Chip = { label: string; clear: Partial<typeof s> }
+  const filterChips = (
+    [
+      s.account
+        ? {
+            label:
+              accounts.data?.find((a) => a.id === s.account)?.name ?? "Account",
+            clear: { account: undefined },
+          }
+        : null,
+      s.category
+        ? {
+            label:
+              categories.data?.find((c) => c.code === s.category)?.label ??
+              "Category",
+            clear: { category: undefined },
+          }
+        : null,
+      s.tag
+        ? {
+            label: `#${tags.data?.find((t) => t.id === s.tag)?.name ?? "tag"}`,
+            clear: { tag: undefined },
+          }
+        : null,
+      s.merchant
+        ? {
+            label: s.merchantName ?? s.merchant,
+            clear: { merchant: undefined, merchantName: undefined },
+          }
+        : null,
+    ] as (Chip | null)[]
+  ).filter((x): x is Chip => Boolean(x))
+  const filterCount = filterChips.length
   const dollars = (v: number) => format(Math.round(v * 100))
   return (
     <Page>
       <PageHeader>
         <PageTitle>Reports</PageTitle>
       </PageHeader>
-      <ReportNav range="6m" />
+      <div className="md:hidden">
+        <ReportNav range="6m" />
+      </div>
       <Card className="gap-3 px-4 py-4 sm:px-5">
+        {/* One sentence: Spending by category per month. */}
         <div className="flex flex-wrap items-center gap-2">
           <Segmented
             label="Measure"
@@ -194,64 +260,81 @@ function Builder() {
               label: MEASURE_LABEL[m],
             }))}
           />
-          <span className="text-sm text-muted-foreground">by</span>
-          <Choice
-            aria-label="Group by"
-            size="sm"
-            className="w-32"
-            value={by}
-            onChange={(v) =>
-              set({ by: v === "group" ? undefined : (v as GroupBy) })
-            }
-            options={(Object.keys(BY_LABEL) as GroupBy[]).map((k) => ({
-              value: k,
-              label: BY_LABEL[k],
-            }))}
-          />
-          <span className="text-sm text-muted-foreground">per</span>
-          <Choice
-            aria-label="Interval"
-            size="sm"
-            className="w-28"
-            value={interval}
-            onChange={(v) =>
-              set({
-                interval:
-                  v === "month"
-                    ? undefined
-                    : (v as "week" | "quarter" | "year"),
-              })
-            }
-            options={[
-              { value: "week", label: "Week" },
-              { value: "month", label: "Month" },
-              { value: "quarter", label: "Quarter" },
-              { value: "year", label: "Year" },
-            ]}
-          />
-          <Segmented
-            label="Chart"
-            className="sm:ml-auto"
-            value={chart}
-            onChange={(v) => set({ chart: v })}
-            options={[
-              { value: "bar", label: <ChartColumnBigIcon />, title: "Bars" },
-              {
-                value: "stacked",
-                label: <ChartColumnStackedIcon />,
-                title: "Stacked bars",
-              },
-              { value: "line", label: <ChartLineIcon />, title: "Lines" },
-              { value: "donut", label: <ChartPieIcon />, title: "Donut" },
-              { value: "table", label: <TableIcon />, title: "Table" },
-            ]}
-          />
+          <span className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">by</span>
+            <Choice
+              aria-label="Group by"
+              size="sm"
+              className="w-36 max-w-full"
+              value={by}
+              onChange={(v) =>
+                set({ by: v === "group" ? undefined : (v as GroupBy) })
+              }
+              options={BY_ORDER.map((k) => ({
+                value: k,
+                label: BY_LABEL[k],
+              }))}
+            />
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">per</span>
+            <Choice
+              aria-label="Interval"
+              size="sm"
+              className="w-28"
+              value={interval}
+              onChange={(v) =>
+                set({
+                  interval:
+                    v === "month"
+                      ? undefined
+                      : (v as "week" | "quarter" | "year"),
+                })
+              }
+              options={[
+                { value: "week", label: "Week" },
+                { value: "month", label: "Month" },
+                { value: "quarter", label: "Quarter" },
+                { value: "year", label: "Year" },
+              ]}
+            />
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Chart"
+            className="flex w-fit gap-0.5 rounded-full bg-muted p-0.5 sm:ml-auto"
+          >
+            {CHART_OPTIONS.map((o) => (
+              <Tooltip key={o.value}>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      role="radio"
+                      aria-checked={chart === o.value}
+                      aria-label={o.label}
+                      size="icon-sm"
+                      variant={chart === o.value ? "outline" : "ghost"}
+                      className={
+                        chart === o.value
+                          ? "bg-background shadow-xs dark:bg-background"
+                          : "text-muted-foreground"
+                      }
+                      onClick={() => set({ chart: o.value })}
+                    />
+                  }
+                >
+                  <o.icon />
+                </TooltipTrigger>
+                <TooltipContent>{o.label}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap items-center gap-2">
           <Choice
             aria-label="Date range"
             size="sm"
-            className="sm:w-40"
+            className="w-44 max-w-full"
             value={preset}
             onChange={(v) =>
               set({
@@ -262,9 +345,9 @@ function Builder() {
               })
             }
             options={[
-              { value: "3m", label: "Last 3 months" },
-              { value: "6m", label: "Last 6 months" },
-              { value: "12m", label: "Last 12 months" },
+              { value: "3m", label: "Last 3 full months" },
+              { value: "6m", label: "Last 6 full months" },
+              { value: "12m", label: "Last 12 full months" },
               { value: "ytd", label: "This year" },
               { value: "last-year", label: "Last year" },
               { value: "custom", label: "Custom dates" },
@@ -273,7 +356,7 @@ function Builder() {
           <Choice
             aria-label="Compare with"
             size="sm"
-            className="sm:w-48"
+            className="w-44 max-w-full"
             value={s.compare ?? ""}
             placeholder="No comparison"
             onChange={(v) =>
@@ -282,7 +365,7 @@ function Builder() {
               })
             }
             options={[
-              { value: "previous", label: "vs the period before" },
+              { value: "previous", label: "vs period before" },
               { value: "year", label: "vs a year earlier" },
             ]}
           />
@@ -290,58 +373,96 @@ function Builder() {
             <>
               <DatePicker
                 aria-label="From"
-                className="sm:w-40"
+                className="w-40"
                 clearable={false}
                 value={s.from ?? range?.from ?? ""}
                 onChange={(v) => set({ from: v })}
               />
               <DatePicker
                 aria-label="To"
-                className="sm:w-40"
+                className="w-40"
                 clearable={false}
                 value={s.to ?? range?.to ?? ""}
                 onChange={(v) => set({ to: v })}
               />
             </>
           ) : null}
-          <Choice
-            aria-label="Account"
-            size="sm"
-            className="sm:w-40"
-            value={s.account ?? ""}
-            placeholder="All accounts"
-            onChange={(v) => set({ account: v || undefined })}
-            options={(accounts.data ?? [])
-              .filter((a) => !a.hidden)
-              .map((a) => ({ value: a.id, label: a.name }))}
-          />
-          <CategoryPicker
-            label="Category filter"
-            className="h-7 sm:w-44"
-            categories={categories.data ?? []}
-            value={s.category ?? ""}
-            emptyOption="All categories"
-            onChange={(v) => set({ category: v || undefined })}
-          />
-          <Choice
-            aria-label="Tag"
-            size="sm"
-            className="sm:w-36"
-            value={s.tag ?? ""}
-            placeholder="Any tag"
-            onChange={(v) => set({ tag: v || undefined })}
-            options={(tags.data ?? []).map((t) => ({
-              value: t.id,
-              label: t.name,
-            }))}
-          />
-          <MerchantFilter
-            className="h-7 sm:w-44"
-            value={s.merchant}
-            name={s.merchantName}
-            onChange={(key, name) => set({ merchant: key, merchantName: name })}
-          />
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant={filterCount ? "secondary" : "outline"}
+                />
+              }
+            >
+              <SlidersHorizontalIcon data-icon="inline-start" />
+              Filters{filterCount ? ` (${filterCount})` : ""}
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[min(20rem,calc(100vw-2rem))] gap-2 p-3"
+            >
+              <Choice
+                aria-label="Account"
+                className="w-full"
+                value={s.account ?? ""}
+                placeholder="All accounts"
+                onChange={(v) => set({ account: v || undefined })}
+                options={(accounts.data ?? [])
+                  .filter((a) => !a.hidden)
+                  .map((a) => ({ value: a.id, label: a.name }))}
+              />
+              <CategoryPicker
+                label="Category filter"
+                categories={categories.data ?? []}
+                value={s.category ?? ""}
+                emptyOption="All categories"
+                onChange={(v) => set({ category: v || undefined })}
+              />
+              <Choice
+                aria-label="Tag"
+                className="w-full"
+                value={s.tag ?? ""}
+                placeholder="Any tag"
+                onChange={(v) => set({ tag: v || undefined })}
+                options={(tags.data ?? []).map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+              />
+              <MerchantFilter
+                className="w-full"
+                value={s.merchant}
+                name={s.merchantName}
+                onChange={(key, name) =>
+                  set({ merchant: key, merchantName: name })
+                }
+              />
+            </PopoverContent>
+          </Popover>
         </div>
+        {filterChips.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {filterChips.map((c) => (
+              <Badge
+                key={c.label}
+                variant="secondary"
+                className="h-6 gap-1 pr-1 font-normal"
+              >
+                {c.label}
+                <button
+                  type="button"
+                  aria-label={`Remove filter ${c.label}`}
+                  className="rounded-full p-0.5 hover:bg-background/60"
+                  onClick={() => set(c.clear)}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        ) : null}
       </Card>
       {q.isError ? (
         <QueryError
@@ -368,13 +489,20 @@ function Builder() {
               </span>
             }
             footer={
-              d.compare && d.totalCents != null ? (
-                <Compared d={d} />
-              ) : by === "tag" ? (
-                <span className="mr-auto text-sm text-muted-foreground">
-                  A transaction with two tags counts under both.
-                </span>
-              ) : undefined
+              <div className="mr-auto flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                {d.totalCents != null && d.buckets.length > 1 ? (
+                  <span>
+                    Average per {interval}{" "}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {format(Math.round(d.totalCents / d.buckets.length))}
+                    </span>
+                  </span>
+                ) : null}
+                {d.compare && d.totalCents != null ? <Compared d={d} /> : null}
+                {by === "tag" ? (
+                  <span>A transaction with two tags counts under both.</span>
+                ) : null}
+              </div>
             }
           >
             {chart === "table" ? (
@@ -401,8 +529,15 @@ function Builder() {
                     interval === "week"
                       ? epoch(b.key)
                       : epoch(`${b.from.slice(0, 7)}-01`),
+                  // Stacks keep to one side of zero: a series that went the
+                  // other way (money back) is in the table, not the stack.
                   ...Object.fromEntries(
-                    d.series.map((x) => [x.key, x.values[bi] / 100])
+                    d.series.map((x) => [
+                      x.key,
+                      (chart === "stacked" && measure !== "net"
+                        ? Math.max(0, x.values[bi])
+                        : x.values[bi]) / 100,
+                    ])
                   ),
                 }))}
                 config={Object.fromEntries(
@@ -441,17 +576,26 @@ function Builder() {
   )
 }
 
+/** Up is bad for spending and good for income or cash flow, everywhere. */
+const changeTone = (measure: string, now: number, before: number) =>
+  now === before
+    ? ""
+    : (measure === "spending" ? now > before : now < before)
+      ? "text-negative"
+      : "text-positive"
+/** A share that rounds to nothing still shows it is there. */
+const share = (x: number) => (x > 0 && x < 0.005 ? "<1%" : percent(x))
+
 function Compared({ d }: { d: BuiltReport }) {
   const before = d.compare!.totalCents
   const now = d.totalCents ?? 0
   const change = before ? (now - before) / Math.abs(before) : null
-  const worse = d.measure === "spending" ? now > before : now < before
   return (
-    <span className="mr-auto text-sm text-muted-foreground">
+    <span>
       {money(before, { whole: true })} from {shortDate(d.compare!.from)} to{" "}
       {fullDate(d.compare!.to)}
       {change != null ? (
-        <span className={worse ? "text-negative" : "text-positive"}>
+        <span className={changeTone(d.measure, now, before)}>
           {" "}
           · {change > 0 ? "+" : ""}
           {percent(change)}
@@ -532,13 +676,15 @@ function ReportTable({
                 </TableCell>
                 <TableCell className="hidden text-right text-muted-foreground tabular-nums sm:table-cell">
                   {total > 0 && x.totalCents > 0
-                    ? percent(x.totalCents / total)
+                    ? share(x.totalCents / total)
                     : "—"}
                 </TableCell>
                 <TableCell className="hidden text-right text-muted-foreground tabular-nums sm:table-cell">
                   {x.count.toLocaleString()}
                 </TableCell>
-                <TableCell className="pr-5 text-right text-muted-foreground tabular-nums">
+                <TableCell
+                  className={`pr-5 text-right tabular-nums ${changeTone(d.measure, x.totalCents, before)}`}
+                >
                   {change == null
                     ? ""
                     : `${change > 0 ? "+" : ""}${percent(change)}`}
