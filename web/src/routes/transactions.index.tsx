@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
+  cn,
   Page,
   PageActions,
   PageHeader,
@@ -452,9 +453,13 @@ function Transactions() {
               .map((a) => ({ value: a.id, label: a.name }))}
           />
           <Button
-            variant={reviewing ? "secondary" : "outline"}
+            variant="outline"
             aria-pressed={reviewing}
-            className="max-sm:flex-1"
+            className={cn(
+              "max-sm:flex-1",
+              reviewing &&
+                "border-primary/40 bg-primary/10 hover:bg-primary/15 dark:border-primary/40 dark:bg-primary/15"
+            )}
             onClick={() =>
               set({ status: reviewing ? undefined : "unreviewed" })
             }
