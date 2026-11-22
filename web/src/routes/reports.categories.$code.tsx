@@ -41,9 +41,9 @@ function CategoryDetail() {
   usePageTitle(q.data?.category.label, true)
   const d = q.data
   const income = d?.category.group === "income"
-  const budget = budgets.data?.rows.find((r) => r.code === code)
+  const budget = budgets.data?.expenses.find((r) => r.code === code)
   const thisMonth = d?.monthly.at(-1)?.cents ?? 0
-  const parent = budgets.data?.rows.find((r) => r.code === d?.category.parent)
+  const parent = budgets.data?.expenses.find((r) => r.code === d?.category.parent)
   const maxMerchant = Math.max(1, ...(d?.merchants.map((m) => m.cents) ?? [1]))
   const chart = d ? (
     <TrendChart

@@ -3,6 +3,17 @@
 /* Scan this app's own sources too. */
 @source "./";
 
+/* A caution tone, for "ahead of pace" and items due soon. */
+@theme inline {
+  --color-warning: var(--warning);
+}
+:root {
+  --warning: var(--flexoki-orange-600);
+  @variant dark {
+    --warning: var(--flexoki-orange-400);
+  }
+}
+
 /*
  * Spending and losses are the same red in both themes, on charts and text
  * alike, so a bar reads as the figure beside it.
