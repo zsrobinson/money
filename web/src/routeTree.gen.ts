@@ -27,6 +27,7 @@ import { Route as RulesIdRouteImport } from './routes/rules.$id'
 import { Route as RulesNewRouteImport } from './routes/rules.new'
 import { Route as TransactionsIndexRouteImport } from './routes/transactions.index'
 import { Route as TransactionsIdRouteImport } from './routes/transactions.$id'
+import { Route as TransactionsNewRouteImport } from './routes/transactions.new'
 import { Route as ReportsCategoriesCodeRouteImport } from './routes/reports.categories.$code'
 import { Route as ReportsMerchantsIndexRouteImport } from './routes/reports.merchants.index'
 import { Route as ReportsMerchantsKeyRouteImport } from './routes/reports.merchants.$key'
@@ -121,6 +122,11 @@ const TransactionsIdRoute = TransactionsIdRouteImport.update({
   path: '/transactions/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TransactionsNewRoute = TransactionsNewRouteImport.update({
+  id: '/transactions/new',
+  path: '/transactions/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsCategoriesCodeRoute = ReportsCategoriesCodeRouteImport.update({
   id: '/reports/categories/$code',
   path: '/reports/categories/$code',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
+  '/transactions/new': typeof TransactionsNewRoute
   '/accounts/': typeof AccountsIndexRoute
   '/goals/': typeof GoalsIndexRoute
   '/reports/': typeof ReportsIndexRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
+  '/transactions/new': typeof TransactionsNewRoute
   '/accounts': typeof AccountsIndexRoute
   '/goals': typeof GoalsIndexRoute
   '/reports': typeof ReportsIndexRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
   '/transactions/$id': typeof TransactionsIdRoute
+  '/transactions/new': typeof TransactionsNewRoute
   '/accounts/': typeof AccountsIndexRoute
   '/goals/': typeof GoalsIndexRoute
   '/reports/': typeof ReportsIndexRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
+    | '/transactions/new'
     | '/accounts/'
     | '/goals/'
     | '/reports/'
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
+    | '/transactions/new'
     | '/accounts'
     | '/goals'
     | '/reports'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '/rules/$id'
     | '/rules/new'
     | '/transactions/$id'
+    | '/transactions/new'
     | '/accounts/'
     | '/goals/'
     | '/reports/'
@@ -293,6 +305,7 @@ export interface RootRouteChildren {
   RulesIdRoute: typeof RulesIdRoute
   RulesNewRoute: typeof RulesNewRoute
   TransactionsIdRoute: typeof TransactionsIdRoute
+  TransactionsNewRoute: typeof TransactionsNewRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
   GoalsIndexRoute: typeof GoalsIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
@@ -431,6 +444,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransactionsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/transactions/new': {
+      id: '/transactions/new'
+      path: '/transactions/new'
+      fullPath: '/transactions/new'
+      preLoaderRoute: typeof TransactionsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/categories/$code': {
       id: '/reports/categories/$code'
       path: '/reports/categories/$code'
@@ -469,6 +489,7 @@ const rootRouteChildren: RootRouteChildren = {
   RulesIdRoute: RulesIdRoute,
   RulesNewRoute: RulesNewRoute,
   TransactionsIdRoute: TransactionsIdRoute,
+  TransactionsNewRoute: TransactionsNewRoute,
   AccountsIndexRoute: AccountsIndexRoute,
   GoalsIndexRoute: GoalsIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,

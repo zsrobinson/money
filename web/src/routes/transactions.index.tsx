@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import {
   Page,
   PageActions,
@@ -9,30 +9,50 @@ import {
   PageTitle,
 } from "@zsrobinson/shell"
 import { QueryError } from "@zsrobinson/shell/blocks/query-error"
+import { Badge } from "@zsrobinson/shell/ui/badge"
 import { Button } from "@zsrobinson/shell/ui/button"
 import { Card } from "@zsrobinson/shell/ui/card"
 import { Checkbox } from "@zsrobinson/shell/ui/checkbox"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@zsrobinson/shell/ui/dropdown-menu"
 import { Input } from "@zsrobinson/shell/ui/input"
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@zsrobinson/shell/ui/input-group"
+import { Kbd } from "@zsrobinson/shell/ui/kbd"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@zsrobinson/shell/ui/popover"
+import {
+  BookmarkIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
-  EyeOffIcon,
+  EllipsisIcon,
   ListChecksIcon,
+  PlusIcon,
   SearchIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react"
 import { z } from "zod"
-import { EmptyState, InfoTip, Loading } from "@/components/money"
+import { CategoryPicker } from "@/components/category-picker"
+import { EmptyState, Loading } from "@/components/money"
 import { Choice, DatePicker } from "@/components/pickers"
-import { CategorySelect, ReviewDot, TxnRows } from "@/components/transactions"
+import { MerchantFilter } from "@/components/merchant-filter"
+import { TxnRows } from "@/components/transactions"
 import { query } from "@/lib/api"
 import { usePageTitle } from "@/lib/crumb"
 import { money, pluralize } from "@/lib/format"
@@ -40,8 +60,10 @@ import { useSend } from "@/lib/mutations"
 import {
   accountsQuery,
   categoriesQuery,
+  metaQuery,
   tagsQuery,
   transactionsQuery,
+  viewsQuery,
 } from "@/lib/queries"
 
 const STATUS = [
@@ -50,6 +72,7 @@ const STATUS = [
   "reviewed",
   "pending",
   "split",
+  "manual",
   "hidden",
   "all",
 ] as const
@@ -58,6 +81,8 @@ const search = z.object({
   account: z.string().optional(),
   category: z.string().optional(),
   merchant: z.string().optional(),
+  /** Shown name for the merchant filter. */
+  merchantName: z.string().optional(),
   /** A rule's conditions, from its Matches list. */
   match: z.string().optional(),
   tag: z.string().optional(),
@@ -87,6 +112,7 @@ const STATUS_LABEL: Record<(typeof STATUS)[number], string> = {
   reviewed: "Reviewed",
   pending: "Pending",
   split: "Split",
+  manual: "Added by hand",
   hidden: "Hidden",
   all: "Everything",
 }
@@ -97,6 +123,38 @@ const SORTS = [
   { value: "amount-asc", label: "Smallest first" },
   { value: "merchant-asc", label: "Merchant A–Z" },
 ]
+const FLOW_LABEL = {
+  activity: "Purchases and income",
+  bank_transfer: "Transfers",
+  peer_payment: "Peer payments",
+}
+
+/** The API's filter parameters for a search; amounts in cents. */
+function txnFilters(s: TxnSearch) {
+  return {
+    q: s.q,
+    account: s.account,
+    category: s.category,
+    merchant: s.merchant,
+    match: s.match,
+    tag: s.tag,
+    from: s.from,
+    to: s.to,
+    min: s.min != null ? Math.round(s.min * 100) : undefined,
+    max: s.max != null ? Math.round(s.max * 100) : undefined,
+    direction: s.direction,
+    flow: s.flow,
+    status: s.status,
+  }
+}
+
+type Bulk = {
+  ids?: string[]
+  filter?: Record<string, string>
+  patch?: Record<string, unknown>
+  addTag?: string
+  removeTag?: string
+}
 
 function Transactions() {
   usePageTitle("Transactions")
@@ -116,73 +174,206 @@ function Transactions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text])
   const [filtersOpen, setFiltersOpen] = useState(
-    Boolean(
-      s.min ||
-      s.max ||
-      s.direction ||
-      s.flow ||
-      s.tag ||
-      s.from ||
-      s.to ||
-      s.status
-    )
+    Boolean(s.min || s.max || s.direction || s.flow || s.tag || s.from || s.to)
   )
   const page = s.page ?? 1
-  const filters = {
-    q: s.q,
-    account: s.account,
-    category: s.category,
-    merchant: s.merchant,
-    match: s.match,
-    tag: s.tag,
-    from: s.from,
-    to: s.to,
-    min: s.min != null ? Math.round(s.min * 100) : undefined,
-    max: s.max != null ? Math.round(s.max * 100) : undefined,
-    direction: s.direction,
-    flow: s.flow,
-    status: s.status,
-  }
+  const filters = txnFilters(s)
+  const listParams = { ...filters, sort: s.sort, order: s.order }
   const list = useQuery(
     transactionsQuery({
-      ...filters,
-      sort: s.sort,
-      order: s.order,
+      ...listParams,
       offset: (page - 1) * PAGE,
       limit: PAGE,
     })
   )
+  const meta = useQuery(metaQuery)
   const accounts = useQuery(accountsQuery)
   const categories = useQuery(categoriesQuery)
   const tags = useQuery(tagsQuery)
+  const views = useQuery(viewsQuery)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const toggle = (id: string, on: boolean) =>
+  /** Every transaction matching the filters, not just this page. */
+  const [allMatching, setAllMatching] = useState(false)
+  const toggle = (id: string, on: boolean) => {
+    setAllMatching(false)
     setSelected((prev) => {
       const next = new Set(prev)
       if (on) next.add(id)
       else next.delete(id)
       return next
     })
+  }
   const stopSelecting = () => {
     setSelecting(false)
     setSelected(new Set())
+    setAllMatching(false)
   }
-  const bulk = useSend<
-    { ids: string[]; patch: Record<string, unknown>; addTag?: string },
-    { updated: number }
-  >("POST", "/api/transactions/bulk", {
-    success: (r) => `Updated ${pluralize(r.updated, "transaction")}`,
-    onSuccess: () => setSelected(new Set()),
-  })
-  const items = list.data?.items ?? []
-  const allSelected = items.length > 0 && items.every((t) => selected.has(t.id))
-  const active = Object.entries(s).filter(
-    ([k, v]) => v !== undefined && !["page", "sort", "order", "q"].includes(k)
+  const bulk = useSend<Bulk, { updated: number; keptByRules: number }>(
+    "POST",
+    "/api/transactions/bulk",
+    {
+      success: (r) =>
+        `Updated ${pluralize(r.updated, "transaction")}${r.keptByRules ? `; a rule keeps the tag on ${r.keptByRules}` : ""}`,
+      onSuccess: () => {
+        setSelected(new Set())
+        setAllMatching(false)
+      },
+    }
   )
+  const items = list.data?.items ?? []
   const total = list.data?.total ?? 0
+  const pageSelected =
+    items.length > 0 && items.every((t) => selected.has(t.id))
+  const count = allMatching ? total : selected.size
+  const apply = (b: Omit<Bulk, "ids" | "filter">) =>
+    bulk.mutate({
+      ...b,
+      ...(allMatching
+        ? {
+            filter: Object.fromEntries(
+              Object.entries(listParams).flatMap(([k, v]) =>
+                v === undefined ? [] : [[k, String(v)]]
+              )
+            ),
+          }
+        : { ids: [...selected] }),
+    })
   const pages = Math.max(1, Math.ceil(total / PAGE))
   const byDate = (s.sort ?? "date") === "date"
+  const unreviewed = meta.data?.unreviewed ?? 0
+  const reviewing = s.status === "unreviewed"
+
+  // Keyboard: j/k move, Enter opens, r marks reviewed, c changes category,
+  // x selects, / searches.
+  const [active, setActive] = useState<string>()
+  const [pickerFor, setPickerFor] = useState<string>()
+  const searchRef = useRef<HTMLInputElement>(null)
+  const review = useSend<{ id: string; reviewed: boolean }>(
+    "PATCH",
+    (v) => `/api/transactions/${v.id}`,
+    {
+      body: (v) => ({ reviewed: v.reviewed }),
+      success: (_, v) => (v.reviewed ? "Reviewed" : "Needs review again"),
+    }
+  )
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        pickerFor ||
+        el.closest("input, textarea, select, [role=dialog], [role=listbox]")
+      )
+        return
+      const i = items.findIndex((t) => t.id === active)
+      const move = (to: number) => {
+        const t = items[Math.max(0, Math.min(items.length - 1, to))]
+        if (!t) return
+        setActive(t.id)
+        document
+          .querySelector(`[data-txn="${t.id}"]`)
+          ?.scrollIntoView({ block: "nearest" })
+      }
+      const current = items[i]
+      if (e.key === "j" || e.key === "ArrowDown") move(i + 1)
+      else if (e.key === "k" || e.key === "ArrowUp") move(i < 0 ? 0 : i - 1)
+      else if (e.key === "/") searchRef.current?.focus()
+      else if (!current) return
+      else if (e.key === "Enter")
+        void navigate({
+          to: "/transactions/$id",
+          params: { id: current.id },
+          search: { list: JSON.stringify(listParams) },
+        })
+      else if (e.key === "r")
+        review.mutate({ id: current.id, reviewed: !current.reviewed })
+      else if (e.key === "c" && !current.split) setPickerFor(current.id)
+      else if (e.key === "x") {
+        setSelecting(true)
+        toggle(current.id, !selected.has(current.id))
+      } else return
+      e.preventDefault()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  })
+
+  const save = useSend<{ name: string; search: Record<string, string> }>(
+    "POST",
+    "/api/views",
+    { success: (_, v) => `Saved “${v.name}”` }
+  )
+  const forget = useSend<{ id: string }>(
+    "DELETE",
+    (v) => `/api/views/${v.id}`,
+    { success: "View removed" }
+  )
+  const viewSearch = Object.fromEntries(
+    Object.entries(s).flatMap(([k, v]) =>
+      v === undefined || k === "page" ? [] : [[k, String(v)]]
+    )
+  )
+  const isView = (v: { search: Record<string, string> }) =>
+    JSON.stringify(Object.entries(v.search).sort()) ===
+    JSON.stringify(Object.entries(viewSearch).sort())
+  const openView = (v: { search: Record<string, string> }) => {
+    setText(v.search.q ?? "")
+    void navigate({
+      search: Object.fromEntries(
+        Object.entries(v.search).map(([k, val]) => [
+          k,
+          ["min", "max", "page"].includes(k) ? Number(val) : val,
+        ])
+      ) as TxnSearch,
+      replace: true,
+    })
+  }
+
+  const account = (accounts.data ?? []).find((a) => a.id === s.account)
+  type Chip = { label: string; clear: Partial<TxnSearch> }
+  const chips = (
+    [
+      s.merchant
+        ? {
+            label: `Merchant: ${s.merchantName ?? s.merchant}`,
+            clear: { merchant: undefined, merchantName: undefined },
+          }
+        : null,
+      s.match
+        ? { label: "Matching a rule", clear: { match: undefined } }
+        : null,
+      s.tag
+        ? {
+            label: `Tag: ${tags.data?.find((t) => t.id === s.tag)?.name ?? "…"}`,
+            clear: { tag: undefined },
+          }
+        : null,
+      s.flow ? { label: FLOW_LABEL[s.flow], clear: { flow: undefined } } : null,
+      s.direction
+        ? {
+            label: s.direction === "in" ? "Money in" : "Money out",
+            clear: { direction: undefined },
+          }
+        : null,
+      s.from ? { label: `From ${s.from}`, clear: { from: undefined } } : null,
+      s.to ? { label: `To ${s.to}`, clear: { to: undefined } } : null,
+      s.min != null
+        ? { label: `At least $${s.min}`, clear: { min: undefined } }
+        : null,
+      s.max != null
+        ? { label: `At most $${s.max}`, clear: { max: undefined } }
+        : null,
+      s.status && s.status !== "unreviewed"
+        ? { label: STATUS_LABEL[s.status], clear: { status: undefined } }
+        : null,
+    ] as (Chip | null)[]
+  ).filter((x): x is Chip => Boolean(x))
+  const anyFilter =
+    chips.length > 0 || Boolean(s.q || s.category || s.account || reviewing)
+
   return (
     <Page>
       <PageHeader>
@@ -197,19 +388,15 @@ function Transactions() {
             nativeButton={false}
           >
             <DownloadIcon data-icon="inline-start" />
-            Export CSV
+            <span className="max-sm:sr-only">Export</span>
           </Button>
           <Button
-            variant={s.status === "unreviewed" ? "secondary" : "outline"}
             size="sm"
-            aria-pressed={s.status === "unreviewed"}
-            onClick={() =>
-              set({
-                status: s.status === "unreviewed" ? undefined : "unreviewed",
-              })
-            }
+            render={<Link to="/transactions/new" />}
+            nativeButton={false}
           >
-            Needs review
+            <PlusIcon data-icon="inline-start" />
+            Add
           </Button>
         </PageActions>
       </PageHeader>
@@ -220,23 +407,25 @@ function Transactions() {
               <SearchIcon />
             </InputGroupAddon>
             <InputGroupInput
+              ref={searchRef}
               aria-label="Search transactions"
               placeholder="Search transactions"
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
             />
           </InputGroup>
-          <CategorySelect
-            aria-label="Category"
-            className="min-w-0 flex-1 sm:w-44 sm:flex-none"
+          <CategoryPicker
+            label="Category"
+            className="min-w-0 basis-[calc(50%-0.25rem)] sm:w-44 sm:basis-auto"
             categories={categories.data ?? []}
             value={s.category ?? ""}
-            placeholder="All categories"
+            emptyOption="All categories"
             onChange={(v) => set({ category: v || undefined })}
           />
           <Choice
             aria-label="Account"
-            className="min-w-0 flex-1 sm:w-44 sm:flex-none"
+            className="min-w-0 basis-[calc(50%-0.25rem)] sm:w-44 sm:basis-auto"
             value={s.account ?? ""}
             placeholder="All accounts"
             onChange={(v) => set({ account: v || undefined })}
@@ -244,6 +433,28 @@ function Transactions() {
               .filter((a) => !a.hidden || a.id === s.account)
               .map((a) => ({ value: a.id, label: a.name }))}
           />
+          <Button
+            variant={reviewing ? "secondary" : "outline"}
+            aria-pressed={reviewing}
+            className="max-sm:flex-1"
+            onClick={() =>
+              set({ status: reviewing ? undefined : "unreviewed" })
+            }
+          >
+            {reviewing ? (
+              <CheckIcon data-icon="inline-start" />
+            ) : (
+              <span
+                aria-hidden
+                className="size-1.5 rounded-full bg-primary"
+                data-icon="inline-start"
+              />
+            )}
+            Needs review
+            <span className="text-muted-foreground tabular-nums">
+              {unreviewed}
+            </span>
+          </Button>
           <Button
             variant={filtersOpen ? "secondary" : "outline"}
             aria-expanded={filtersOpen}
@@ -255,6 +466,14 @@ function Transactions() {
         </div>
         {filtersOpen ? (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <MerchantFilter
+              className="col-span-2 sm:w-52"
+              value={s.merchant}
+              name={s.merchantName}
+              onChange={(key, name) =>
+                set({ merchant: key, merchantName: name })
+              }
+            />
             <Choice
               aria-label="Status"
               className="sm:w-40"
@@ -272,9 +491,9 @@ function Transactions() {
             />
             <Choice
               aria-label="Direction"
-              className="sm:w-40"
+              className="sm:w-36"
               value={s.direction ?? ""}
-              placeholder="Money in and out"
+              placeholder="In and out"
               onChange={(v) =>
                 set({ direction: (v || undefined) as TxnSearch["direction"] })
               }
@@ -285,24 +504,20 @@ function Transactions() {
             />
             <Choice
               aria-label="Kind"
-              className="sm:w-52"
+              className="sm:w-48"
               value={s.flow ?? ""}
               placeholder="Any kind"
               onChange={(v) =>
                 set({ flow: (v || undefined) as TxnSearch["flow"] })
               }
-              options={[
-                { value: "activity", label: "Purchases and income" },
-                {
-                  value: "bank_transfer",
-                  label: "Transfers and card payments",
-                },
-                { value: "peer_payment", label: "Peer payments" },
-              ]}
+              options={Object.entries(FLOW_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              }))}
             />
             <Choice
               aria-label="Tag"
-              className="sm:w-40"
+              className="sm:w-36"
               value={s.tag ?? ""}
               placeholder="Any tag"
               onChange={(v) => set({ tag: v || undefined })}
@@ -314,18 +529,19 @@ function Transactions() {
             <DatePicker
               aria-label="From date"
               placeholder="From"
-              className="sm:w-44"
+              className="sm:w-40"
               value={s.from ?? ""}
               onChange={(v) => set({ from: v || undefined })}
             />
             <DatePicker
               aria-label="To date"
               placeholder="To"
-              className="sm:w-44"
+              className="sm:w-40"
               value={s.to ?? ""}
               onChange={(v) => set({ to: v || undefined })}
             />
             <Input
+              key={`min-${s.min}`}
               aria-label="Minimum amount"
               inputMode="decimal"
               placeholder="Min $"
@@ -340,6 +556,7 @@ function Transactions() {
               }
             />
             <Input
+              key={`max-${s.max}`}
               aria-label="Maximum amount"
               inputMode="decimal"
               placeholder="Max $"
@@ -355,44 +572,90 @@ function Transactions() {
             />
           </div>
         ) : null}
+        {(views.data?.length ?? 0) > 0 || chips.length || anyFilter ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(views.data ?? []).map((v) => (
+              <span key={v.id} className="flex items-center">
+                <Button
+                  size="xs"
+                  variant={isView(v) ? "secondary" : "ghost"}
+                  className="rounded-r-none pr-1.5"
+                  onClick={() => openView(v)}
+                >
+                  <BookmarkIcon data-icon="inline-start" />
+                  {v.name}
+                </Button>
+                <Button
+                  size="icon-xs"
+                  variant={isView(v) ? "secondary" : "ghost"}
+                  className="rounded-l-none text-muted-foreground"
+                  aria-label={`Remove view ${v.name}`}
+                  onClick={() => forget.mutate({ id: v.id })}
+                >
+                  <XIcon />
+                </Button>
+              </span>
+            ))}
+            {chips.map((c) => (
+              <Badge
+                key={c.label}
+                variant="secondary"
+                className="h-6 gap-1 pr-1 font-normal"
+              >
+                {c.label}
+                <button
+                  type="button"
+                  aria-label={`Remove filter ${c.label}`}
+                  className="rounded-full p-0.5 hover:bg-background/60"
+                  onClick={() => set(c.clear)}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ))}
+            {anyFilter && !(views.data ?? []).some(isView) ? (
+              <SaveView
+                onSave={(name) => save.mutate({ name, search: viewSearch })}
+              />
+            ) : null}
+            {anyFilter ? (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="text-muted-foreground"
+                onClick={() => {
+                  setText("")
+                  void navigate({ search: {}, replace: true })
+                }}
+              >
+                Clear all
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <PageMeta>
         {list.data ? (
           <>
-            <span>{pluralize(total, "transaction")}</span>
-            <span className="tabular-nums">
+            <span>
+              {pluralize(total, "transaction")}
+              {account ? ` in ${account.name}` : ""}
+            </span>
+            <span
+              className="tabular-nums"
+              title="Leaves out transfers between your accounts and hidden transactions"
+            >
               <span className="text-positive">
                 {money(list.data.inflowCents, { sign: true, whole: true })}
               </span>{" "}
-              in
-            </span>
-            <span className="flex items-center gap-0.5 tabular-nums">
-              {money(-list.data.outflowCents, { whole: true })} out
-              <InfoTip label="About these totals">
-                Transfers between your accounts and hidden transactions are left
-                out.
-              </InfoTip>
-            </span>
-            {s.match ? <span>Matching a rule</span> : null}
-            <span className="flex items-center gap-1.5">
-              <ReviewDot /> needs review
+              in · {money(-list.data.outflowCents, { whole: true })} out
             </span>
           </>
         ) : null}
-        {active.length || s.q ? (
-          <Button
-            variant="link"
-            size="xs"
-            className="px-0"
-            onClick={() => {
-              setText("")
-              void navigate({ search: {}, replace: true })
-            }}
-          >
-            <XIcon data-icon="inline-start" />
-            Clear filters
-          </Button>
-        ) : null}
+        <span className="hidden items-center gap-1 lg:flex">
+          <Kbd>j</Kbd>
+          <Kbd>k</Kbd> move · <Kbd>r</Kbd> reviewed · <Kbd>c</Kbd> category
+        </span>
       </PageMeta>
       {list.isError ? (
         <QueryError
@@ -407,86 +670,34 @@ function Transactions() {
             <>
               <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
                 <Checkbox
-                  checked={allSelected}
-                  onCheckedChange={(on) =>
+                  checked={pageSelected || allMatching}
+                  onCheckedChange={(on) => {
+                    setAllMatching(false)
                     setSelected(
                       on ? new Set(items.map((t) => t.id)) : new Set()
                     )
-                  }
+                  }}
                   aria-label="Select all on this page"
                 />
-                {selected.size ? `${selected.size} selected` : "Select all"}
+                {count ? `${count.toLocaleString()} selected` : "Select all"}
               </label>
+              {pageSelected && total > items.length && !allMatching ? (
+                <Button
+                  size="xs"
+                  variant="link"
+                  className="px-0"
+                  onClick={() => setAllMatching(true)}
+                >
+                  Select all {total.toLocaleString()} matching
+                </Button>
+              ) : null}
               <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                {selected.size ? (
-                  <>
-                    <CategorySelect
-                      aria-label="Set category for selected"
-                      size="sm"
-                      className="w-40"
-                      categories={categories.data ?? []}
-                      value=""
-                      placeholder="Set category"
-                      disabled={bulk.isPending}
-                      onChange={(v) =>
-                        v &&
-                        bulk.mutate({
-                          ids: [...selected],
-                          patch: { category: v },
-                        })
-                      }
-                    />
-                    {tags.data?.length ? (
-                      <Choice
-                        aria-label="Add tag to selected"
-                        size="sm"
-                        className="w-32"
-                        value=""
-                        placeholder="Add tag"
-                        disabled={bulk.isPending}
-                        onChange={(v) =>
-                          v &&
-                          bulk.mutate({
-                            ids: [...selected],
-                            patch: {},
-                            addTag: v,
-                          })
-                        }
-                        options={tags.data.map((t) => ({
-                          value: t.id,
-                          label: t.name,
-                        }))}
-                      />
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={bulk.isPending}
-                      onClick={() =>
-                        bulk.mutate({
-                          ids: [...selected],
-                          patch: { reviewed: true },
-                        })
-                      }
-                    >
-                      <CheckIcon data-icon="inline-start" />
-                      Mark reviewed
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={bulk.isPending}
-                      onClick={() =>
-                        bulk.mutate({
-                          ids: [...selected],
-                          patch: { hidden: true },
-                        })
-                      }
-                    >
-                      <EyeOffIcon data-icon="inline-start" />
-                      Hide
-                    </Button>
-                  </>
+                {count ? (
+                  <BulkActions
+                    count={count}
+                    disabled={bulk.isPending}
+                    onApply={apply}
+                  />
                 ) : null}
                 <Button size="sm" variant="ghost" onClick={stopSelecting}>
                   Done
@@ -534,7 +745,16 @@ function Transactions() {
             dayTotals={list.data.dayTotals}
             selected={selected}
             onToggle={selecting ? toggle : undefined}
+            editable
+            activeId={active}
+            pickerFor={pickerFor}
+            onPickerChange={setPickerFor}
+            linkSearch={{ list: JSON.stringify(listParams) }}
           />
+        ) : reviewing ? (
+          <EmptyState title="All caught up">
+            Nothing needs review right now.
+          </EmptyState>
         ) : (
           <EmptyState title="No transactions match">
             Change the search or clear filters to see more.
@@ -571,5 +791,207 @@ function Transactions() {
         ) : null}
       </Card>
     </Page>
+  )
+}
+
+function SaveView({ onSave }: { onSave: (name: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState("")
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button size="xs" variant="ghost" />}>
+        <BookmarkIcon data-icon="inline-start" />
+        Save view
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-2 p-3">
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!name.trim()) return
+            onSave(name.trim())
+            setName("")
+            setOpen(false)
+          }}
+        >
+          <Input
+            autoFocus
+            aria-label="View name"
+            placeholder="Name this view"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button type="submit" size="sm" disabled={!name.trim()}>
+            Save
+          </Button>
+        </form>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** The actions for a selection: category, tags, review, hide, merchant, date. */
+function BulkActions({
+  count,
+  disabled,
+  onApply,
+}: {
+  count: number
+  disabled: boolean
+  onApply: (b: Omit<Bulk, "ids" | "filter">) => void
+}) {
+  const categories = useQuery(categoriesQuery).data ?? []
+  const tags = useQuery(tagsQuery).data ?? []
+  const [form, setForm] = useState<"merchant" | "date" | null>(null)
+  const [value, setValue] = useState("")
+  const many = `${count.toLocaleString()} ${count === 1 ? "transaction" : "transactions"}`
+  return (
+    <>
+      <CategoryPicker
+        label={`Set category for ${many}`}
+        className="h-7 w-40"
+        categories={categories}
+        value=""
+        placeholder="Set category"
+        disabled={disabled}
+        onChange={(v) => v && onApply({ patch: { category: v } })}
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => onApply({ patch: { reviewed: true } })}
+      >
+        <CheckIcon data-icon="inline-start" />
+        Mark reviewed
+      </Button>
+      <Popover
+        open={form !== null}
+        onOpenChange={(open) => !open && setForm(null)}
+      >
+        <PopoverTrigger
+          render={
+            <span aria-hidden className="pointer-events-none -ml-1.5 w-0" />
+          }
+        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="outline"
+                aria-label="More changes"
+                disabled={disabled}
+              />
+            }
+          >
+            <EllipsisIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onClick={() => onApply({ patch: { reviewed: false } })}
+              >
+                Mark as needing review
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onApply({ patch: { hidden: true } })}
+              >
+                Hide from totals
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onApply({ patch: { hidden: null } })}
+              >
+                Unhide
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setValue("")
+                  setForm("merchant")
+                }}
+              >
+                Rename merchant…
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onApply({ patch: { merchant: null } })}
+              >
+                Restore bank’s merchant
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setValue("")
+                  setForm("date")
+                }}
+              >
+                Change date…
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            {tags.length ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Add tag</DropdownMenuLabel>
+                  {tags.map((t) => (
+                    <DropdownMenuItem
+                      key={`add-${t.id}`}
+                      onClick={() => onApply({ addTag: t.id })}
+                    >
+                      {t.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Remove tag</DropdownMenuLabel>
+                  {tags.map((t) => (
+                    <DropdownMenuItem
+                      key={`remove-${t.id}`}
+                      onClick={() => onApply({ removeTag: t.id })}
+                    >
+                      {t.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <PopoverContent align="end" className="w-72 gap-2 p-3">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!value) return
+              onApply({
+                patch:
+                  form === "merchant" ? { merchant: value } : { date: value },
+              })
+              setForm(null)
+            }}
+          >
+            {form === "date" ? (
+              <DatePicker
+                aria-label={`New date for ${many}`}
+                className="flex-1"
+                clearable={false}
+                value={value}
+                onChange={setValue}
+              />
+            ) : (
+              <Input
+                autoFocus
+                aria-label={`Merchant name for ${many}`}
+                placeholder="Merchant name"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
+            )}
+            <Button type="submit" size="sm" disabled={!value}>
+              Apply
+            </Button>
+          </form>
+        </PopoverContent>
+      </Popover>
+    </>
   )
 }

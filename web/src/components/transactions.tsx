@@ -9,10 +9,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@zsrobinson/shell/ui/tooltip"
-import { EyeOffIcon, NotebookPenIcon, SplitIcon } from "lucide-react"
+import { Button } from "@zsrobinson/shell/ui/button"
+import { CheckIcon, EyeOffIcon, NotebookPenIcon, SplitIcon } from "lucide-react"
+import { CategoryPicker } from "@/components/category-picker"
+import { CategoryDot } from "@/components/category-style"
 import { Amount, MerchantMark } from "@/components/money"
-import { Choice } from "@/components/pickers"
 import { dayHeading, money, shortDate } from "@/lib/format"
+import { useSend } from "@/lib/mutations"
 import { categoriesQuery, metaQuery, tagsQuery } from "@/lib/queries"
 import type { Category, Txn } from "@/lib/types"
 
@@ -43,15 +46,52 @@ export function ReviewDot() {
   )
 }
 
+const TAG_HUE: Record<string, string> = {
+  re: "red",
+  or: "orange",
+  ye: "yellow",
+  gr: "green",
+  cy: "cyan",
+  bl: "blue",
+  pu: "purple",
+  ma: "magenta",
+}
+/** A tag as a small outline badge with its colour dot. */
+export function TagBadge({
+  name,
+  hue,
+  className,
+}: {
+  name: string
+  hue: string | null
+  className?: string
+}) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "h-5 max-w-40 shrink-0 gap-1 px-1.5 text-[11px] font-normal text-muted-foreground",
+        className
+      )}
+    >
+      <CategoryDot color={hue ? TAG_HUE[hue] : null} className="size-1.5" />
+      <span className="truncate">{name}</span>
+    </Badge>
+  )
+}
+
 /**
  * The one list of transactions used everywhere: grouped under a header per
  * day (Today, Yesterday, then full dates), the merchant with any Pending badge
- * beneath it, then a category column wide enough for the longest built-in
- * name. `secondary="account"` shows the account in that column instead, for
- * a merchant's own page; `showAccount` adds an account column on wide lists.
- * A narrow list stacks the category under the merchant. Only a list sorted
- * by something other than date drops the day headers (`grouped={false}`),
- * and then shows each date under the merchant.
+ * and tags beneath it, then a category column wide enough for the longest
+ * built-in name. `secondary="account"` shows the account in that column
+ * instead, for a merchant's own page; `showAccount` adds an account column on
+ * wide lists. A narrow list stacks the category under the merchant. Only a
+ * list sorted by something other than date drops the day headers
+ * (`grouped={false}`), and then shows each date under the merchant.
+ *
+ * `editable` makes the category a picker in place and adds a quick "mark
+ * reviewed" button, for clearing a review queue from the list.
  */
 export function TxnRows({
   items,
@@ -61,6 +101,11 @@ export function TxnRows({
   dayTotals,
   secondary = "category",
   grouped = true,
+  editable = false,
+  activeId,
+  pickerFor,
+  onPickerChange,
+  linkSearch,
   className,
 }: {
   items: Txn[]
@@ -71,30 +116,27 @@ export function TxnRows({
   dayTotals?: Record<string, number>
   secondary?: "category" | "account"
   grouped?: boolean
+  editable?: boolean
+  /** The keyboard's current row. */
+  activeId?: string
+  /** The row whose category picker is open (from a shortcut). */
+  pickerFor?: string
+  onPickerChange?: (id: string | undefined) => void
+  /** Carried to the detail page so it can step through this list. */
+  linkSearch?: Record<string, unknown>
   className?: string
 }) {
-  const label = useCategoryLabels()
+  const categories = useQuery(categoriesQuery).data ?? []
   const today = useQuery(metaQuery).data?.today
   const tags = new Map((useQuery(tagsQuery).data ?? []).map((t) => [t.id, t]))
   const accountColumn = showAccount && secondary === "category"
   const columns = accountColumn
     ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem] @3xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_minmax(0,10rem)_6rem]"
     : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem]"
-  const secondText = (t: Txn) =>
-    secondary === "account"
-      ? t.accountName
-      : t.split
-        ? "Split"
-        : label(t.category)
   return (
     <ul className={cn("@container flex flex-col", className)}>
       {items.map((t, i) => {
         const header = grouped && (i === 0 || items[i - 1].date !== t.date)
-        const name = txnName(t)
-        const tagNames = t.tags
-          .map((id) => tags.get(id)?.name)
-          .filter(Boolean)
-          .join(", ")
         return (
           <Fragment key={t.id}>
             {header ? (
@@ -107,109 +149,246 @@ export function TxnRows({
                 ) : null}
               </li>
             ) : null}
-            <li
-              className={cn(
-                "group/row relative flex items-center border-b border-border/70 last:border-b-0",
-                t.hidden && "opacity-60"
-              )}
-            >
-              {onToggle ? (
-                <span className="flex shrink-0 items-center self-stretch pr-1 pl-4 sm:pl-5">
-                  <Checkbox
-                    checked={selected?.has(t.id) ?? false}
-                    onCheckedChange={(on) => onToggle(t.id, on)}
-                    aria-label={`Select ${name}, ${shortDate(t.date)}`}
-                  />
-                </span>
-              ) : null}
-              <Link
-                to="/transactions/$id"
-                params={{ id: t.id }}
-                className={cn(
-                  "grid min-h-13 flex-1 items-center gap-x-3 py-2 pr-4 outline-none hover:bg-muted/60 focus-visible:bg-muted sm:pr-5",
-                  onToggle ? "pl-2" : "pl-4 sm:pl-5",
-                  columns
-                )}
-              >
-                <MerchantMark name={name} />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{name}</span>
-                    {!t.reviewed && !t.pending && !t.hidden ? (
-                      <ReviewDot />
-                    ) : null}
-                    {t.split ? (
-                      <SplitIcon
-                        aria-label="Split"
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                      />
-                    ) : null}
-                    {t.note ? (
-                      <NotebookPenIcon
-                        aria-label="Has a note"
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                      />
-                    ) : null}
-                    {t.hidden ? (
-                      <EyeOffIcon
-                        aria-label="Hidden"
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                      />
-                    ) : null}
-                  </span>
-                  <span
-                    className={cn(
-                      "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
-                      grouped && !t.pending && !tagNames && "@xl:hidden"
-                    )}
-                  >
-                    {grouped ? null : (
-                      <>
-                        <span className="shrink-0 tabular-nums">
-                          {shortDate(t.date, today)}
-                        </span>
-                        <span aria-hidden className="@xl:hidden">
-                          ·
-                        </span>
-                      </>
-                    )}
-                    <span className="min-w-0 truncate @xl:hidden">
-                      {secondText(t)}
-                    </span>
-                    {t.pending ? (
-                      <Badge
-                        variant="outline"
-                        className="h-4 px-1.5 text-[11px] font-normal text-muted-foreground"
-                      >
-                        Pending
-                      </Badge>
-                    ) : null}
-                    {tagNames ? (
-                      <span className="hidden min-w-0 truncate @xl:inline">
-                        {tagNames}
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
-                <span className="hidden truncate text-sm text-muted-foreground @xl:block">
-                  {secondText(t)}
-                </span>
-                {accountColumn ? (
-                  <span className="hidden truncate text-sm text-muted-foreground @3xl:block">
-                    {t.accountName}
-                  </span>
-                ) : null}
-                <Amount
-                  cents={t.amountCents}
-                  currency={t.currency}
-                  className="text-right text-sm font-medium whitespace-nowrap"
-                />
-              </Link>
-            </li>
+            <TxnRow
+              t={t}
+              today={today}
+              columns={columns}
+              accountColumn={accountColumn}
+              secondary={secondary}
+              grouped={grouped}
+              editable={editable}
+              active={activeId === t.id}
+              pickerOpen={pickerFor === t.id}
+              onPickerChange={(open) =>
+                onPickerChange?.(open ? t.id : undefined)
+              }
+              categories={categories}
+              tagList={t.tags.flatMap((id) => {
+                const tag = tags.get(id)
+                return tag ? [tag] : []
+              })}
+              selected={selected?.has(t.id) ?? false}
+              onToggle={onToggle}
+              linkSearch={linkSearch}
+            />
           </Fragment>
         )
       })}
     </ul>
+  )
+}
+
+function TxnRow({
+  t,
+  today,
+  columns,
+  accountColumn,
+  secondary,
+  grouped,
+  editable,
+  active,
+  pickerOpen,
+  onPickerChange,
+  categories,
+  tagList,
+  selected,
+  onToggle,
+  linkSearch,
+}: {
+  t: Txn
+  today: string | undefined
+  columns: string
+  accountColumn: boolean
+  secondary: "category" | "account"
+  grouped: boolean
+  editable: boolean
+  active: boolean
+  pickerOpen: boolean
+  onPickerChange: (open: boolean) => void
+  categories: Category[]
+  tagList: { id: string; name: string; hue: string | null }[]
+  selected: boolean
+  onToggle?: (id: string, on: boolean) => void
+  linkSearch?: Record<string, unknown>
+}) {
+  const name = txnName(t)
+  const cat = categories.find((c) => c.code === t.category)
+  const patch = useSend<Record<string, unknown>>(
+    "PATCH",
+    `/api/transactions/${t.id}`,
+    {
+      success: (_, v) =>
+        "reviewed" in v
+          ? v.reviewed
+            ? `${name} reviewed`
+            : `${name} needs review again`
+          : `${name}: ${categories.find((c) => c.code === v.category)?.label ?? "category changed"}`,
+    }
+  )
+  const canPick = editable && !t.split && secondary === "category"
+  const categoryText =
+    secondary === "account"
+      ? t.accountName
+      : t.split
+        ? "Split"
+        : (cat?.label ?? t.category)
+  const picker = (where: "column" | "line") =>
+    canPick ? (
+      <CategoryPicker
+        variant="chip"
+        label={`Category for ${name}, ${shortDate(t.date)}`}
+        value={t.category}
+        categories={categories}
+        open={where === "column" ? pickerOpen : undefined}
+        onOpenChange={where === "column" ? onPickerChange : undefined}
+        onChange={(code) => patch.mutate({ category: code, reviewed: true })}
+        className={
+          where === "line"
+            ? "mx-0 h-6 px-0 text-xs hover:bg-transparent hover:underline data-popup-open:bg-transparent"
+            : undefined
+        }
+      >
+        <CategoryDot color={cat?.color} />
+        <span className="truncate" title={cat?.fullLabel}>
+          {categoryText}
+        </span>
+      </CategoryPicker>
+    ) : (
+      <span
+        className="flex min-w-0 items-center gap-1.5 truncate"
+        title={cat?.fullLabel}
+      >
+        {secondary === "category" && !t.split ? (
+          <CategoryDot color={cat?.color} />
+        ) : null}
+        <span className="truncate">{categoryText}</span>
+      </span>
+    )
+  return (
+    <li
+      data-txn={t.id}
+      className={cn(
+        "group/row relative flex items-center border-b border-border/70 last:border-b-0 hover:bg-muted/60",
+        t.hidden && "opacity-60",
+        active && "bg-muted ring-2 ring-ring/40 ring-inset"
+      )}
+    >
+      {onToggle ? (
+        <span className="relative z-10 flex shrink-0 items-center self-stretch pr-1 pl-4 sm:pl-5">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={(on) => onToggle(t.id, on)}
+            aria-label={`Select ${name}, ${shortDate(t.date)}`}
+          />
+        </span>
+      ) : null}
+      <div
+        className={cn(
+          "grid min-h-13 flex-1 items-center gap-x-3 py-2 pr-4 sm:pr-5",
+          onToggle ? "pl-2" : "pl-4 sm:pl-5",
+          columns
+        )}
+      >
+        <MerchantMark name={name} />
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-1.5">
+            {/* The name links to the page; the link covers the row. */}
+            <Link
+              to="/transactions/$id"
+              params={{ id: t.id }}
+              search={linkSearch as never}
+              className="truncate text-sm font-medium outline-none after:absolute after:inset-0 focus-visible:underline"
+            >
+              {name}
+            </Link>
+            {t.needsReview ? <ReviewDot /> : null}
+            {t.split ? (
+              <SplitIcon
+                aria-label="Split"
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+            ) : null}
+            {t.note ? (
+              <NotebookPenIcon
+                aria-label="Has a note"
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+            ) : null}
+            {t.hidden ? (
+              <EyeOffIcon
+                aria-label="Hidden"
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+            ) : null}
+          </span>
+          <span
+            className={cn(
+              "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+              grouped && !t.pending && !tagList.length && "@xl:hidden"
+            )}
+          >
+            {grouped ? null : (
+              <>
+                <span className="shrink-0 tabular-nums">
+                  {shortDate(t.date, today)}
+                </span>
+                <span aria-hidden className="@xl:hidden">
+                  ·
+                </span>
+              </>
+            )}
+            <span className="relative z-10 flex min-w-0 @xl:hidden">
+              {picker("line")}
+            </span>
+            {t.pending ? (
+              <Badge
+                variant="outline"
+                className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground"
+              >
+                Pending
+              </Badge>
+            ) : null}
+            {tagList.map((tag, i) => (
+              <TagBadge
+                key={tag.id}
+                name={tag.name}
+                hue={tag.hue}
+                className={
+                  i > 0 ? "hidden @xl:inline-flex" : "hidden @md:inline-flex"
+                }
+              />
+            ))}
+          </span>
+        </span>
+        <span className="relative z-10 hidden min-w-0 text-sm text-muted-foreground @xl:flex">
+          {picker("column")}
+        </span>
+        {accountColumn ? (
+          <span className="hidden truncate text-sm text-muted-foreground @3xl:block">
+            {t.accountName}
+          </span>
+        ) : null}
+        <span className="flex items-center justify-end gap-1">
+          {editable && t.needsReview ? (
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Mark ${name} reviewed`}
+              title="Mark reviewed (r)"
+              className="relative z-10 text-muted-foreground opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 max-sm:hidden"
+              onClick={() => patch.mutate({ reviewed: true })}
+            >
+              <CheckIcon />
+            </Button>
+          ) : null}
+          <Amount
+            cents={t.amountCents}
+            currency={t.currency}
+            className="text-right text-sm font-medium whitespace-nowrap"
+          />
+        </span>
+      </div>
+    </li>
   )
 }
 
@@ -241,6 +420,7 @@ export function categoryOptions(
   )
 }
 
+/** A searchable category field; `placeholder` adds a "none" option. */
 export function CategorySelect({
   value,
   onChange,
@@ -265,16 +445,17 @@ export function CategorySelect({
   "aria-label"?: string
 }) {
   return (
-    <Choice
+    <CategoryPicker
       id={id}
-      size={size}
+      label={ariaLabel ?? "Category"}
       value={value}
       onChange={onChange}
-      options={categoryOptions(categories, value, includeHidden)}
-      placeholder={placeholder}
-      className={cn("w-full", className)}
+      categories={categories}
+      emptyOption={placeholder}
+      placeholder={placeholder ?? "Choose a category"}
+      includeHidden={includeHidden}
       disabled={disabled}
-      aria-label={ariaLabel}
+      className={cn(size === "sm" && "h-7", className)}
     />
   )
 }

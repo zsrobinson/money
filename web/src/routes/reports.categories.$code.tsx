@@ -43,7 +43,9 @@ function CategoryDetail() {
   const income = d?.category.group === "income"
   const budget = budgets.data?.expenses.find((r) => r.code === code)
   const thisMonth = d?.monthly.at(-1)?.cents ?? 0
-  const parent = budgets.data?.expenses.find((r) => r.code === d?.category.parent)
+  const parent = budgets.data?.expenses.find(
+    (r) => r.code === d?.category.parent
+  )
   const maxMerchant = Math.max(1, ...(d?.merchants.map((m) => m.cents) ?? [1]))
   const chart = d ? (
     <TrendChart
