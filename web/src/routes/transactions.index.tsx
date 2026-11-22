@@ -898,6 +898,7 @@ function ViewsMenu({
           </DropdownMenuContent>
         </DropdownMenu>
         <PopoverTrigger
+          nativeButton={false}
           render={
             <span aria-hidden className="pointer-events-none -ml-2 w-0" />
           }
@@ -979,6 +980,7 @@ function BulkActions({
         onOpenChange={(open) => !open && setForm(null)}
       >
         <PopoverTrigger
+          nativeButton={false}
           render={
             <span aria-hidden className="pointer-events-none -ml-1.5 w-0" />
           }

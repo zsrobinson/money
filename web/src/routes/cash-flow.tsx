@@ -224,13 +224,15 @@ function CashFlowPage() {
               formatTick={moneyTick}
               formatTime={(t) => {
                 const r = rows.find((x) => x.time === t)
-                return r ? `${r.label}${r.partial ? " so far" : ""}` : ""
+                return r
+                  ? `${r.label}${r.current ? " so far" : r.partial ? " (partial)" : ""}`
+                  : ""
               }}
               formatTimeTick={(t) =>
                 rows.find((x) => x.time === t)?.label ?? ""
               }
               markers={rows
-                .filter((r) => r.partial)
+                .filter((r) => r.current)
                 .map((r) => ({ time: r.time, label: "So far" }))}
               // Click a period's bars to see it below.
               selected={rows.find((r) => r.key === p.key)?.time}
@@ -238,11 +240,11 @@ function CashFlowPage() {
                 const r = rows.find((x) => x.time === t)
                 if (r) set({ key: r.key })
               }}
-              className="h-64"
+              className="h-64 cursor-pointer"
             />
           </SectionCard>
           <SankeyChartCard
-            title={`Where income went`}
+            title={mobile ? "Where it went" : "Where income went"}
             label={`Income sources flowing to spending and savings, ${periodLabel(p)}`}
             // A phone keeps two columns, income to where it went, so the
             // chart fits without scrolling sideways.
@@ -334,8 +336,10 @@ type PeriodRow = {
   incomeCents: number
   spendingCents: number
   netCents: number
-  /** Still in progress. */
+  /** Still in progress, or cut off by the start of the history. */
   partial: boolean
+  /** Still in progress (the other partial kind starts before the history). */
+  current: boolean
 }
 
 /** Months, or the quarters or years they make up, oldest first. */
@@ -362,12 +366,13 @@ function periodRows(months: MonthFlow[], kind: string): PeriodRow[] {
       spendingCents: 0,
       netCents: 0,
       partial: false,
+      current: false,
     }
     r.incomeCents += f.incomeCents
     r.spendingCents += f.spendingCents
     r.netCents += f.netCents
     // The last month is in progress, and so is the period holding it.
-    if (i === months.length - 1) r.partial = true
+    if (i === months.length - 1) r.partial = r.current = true
     out.set(key, r)
   })
   // A period cut off at the start of the history is not a full one either.
@@ -427,7 +432,9 @@ function PeriodTable({
                   >
                     {r.label}
                     {r.partial ? (
-                      <span className="text-muted-foreground"> so far</span>
+                      <span className="text-muted-foreground">
+                        {r.current ? " so far" : " (partial)"}
+                      </span>
                     ) : null}
                   </button>
                 </TableCell>
@@ -504,7 +511,11 @@ function Breakdown({
                   <span className="shrink-0 tabular-nums">
                     {cents(r.cents)}
                     <span className="ml-2 inline-block w-9 text-right text-xs text-muted-foreground">
-                      {total > 0 && r.cents > 0 ? percent(r.cents / total) : ""}
+                      {total > 0 && r.cents > 0
+                        ? r.cents / total < 0.005
+                          ? "<1%"
+                          : percent(r.cents / total)
+                        : ""}
                     </span>
                   </span>
                 </span>

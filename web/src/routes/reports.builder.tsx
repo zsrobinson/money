@@ -159,6 +159,8 @@ function seriesColor(s: BuiltReport["series"][number], i: number, by: GroupBy) {
   if (by === "category" || by === "group") return categoryColor(s.color)
   if (by === "tag" && s.color) return categoryColor(TAG_HUE[s.color])
   if (by === "none") return "var(--chart-1)"
+  // A merchant takes its main category's colour.
+  if (by === "merchant" && s.color) return categoryColor(s.color)
   return categoryColor(CATEGORY_COLORS[(i * 5) % CATEGORY_COLORS.length])
 }
 
@@ -334,7 +336,7 @@ function Builder() {
           <Choice
             aria-label="Date range"
             size="sm"
-            className="w-44 max-w-full"
+            className="w-52 max-w-full"
             value={preset}
             onChange={(v) =>
               set({
@@ -540,11 +542,21 @@ function Builder() {
                     ])
                   ),
                 }))}
+                // A series that only went the other way has nothing to stack;
+                // it stays in the table below rather than an empty legend entry.
                 config={Object.fromEntries(
-                  d.series.map((x, i) => [
-                    x.key,
-                    { label: x.label, color: seriesColor(x, i, by) },
-                  ])
+                  d.series
+                    .map((x, i) => [x, i] as const)
+                    .filter(
+                      ([x]) =>
+                        chart !== "stacked" ||
+                        measure === "net" ||
+                        x.values.some((v) => v > 0)
+                    )
+                    .map(([x, i]) => [
+                      x.key,
+                      { label: x.label, color: seriesColor(x, i, by) },
+                    ])
                 )}
                 format={dollars}
                 formatTick={moneyTick}

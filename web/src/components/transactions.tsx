@@ -138,8 +138,8 @@ export function TxnRows({
   const tags = new Map((useQuery(tagsQuery).data ?? []).map((t) => [t.id, t]))
   const accountColumn = showAccount && secondary === "category"
   const columns = accountColumn
-    ? "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem] @3xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_minmax(0,10rem)_6rem]"
-    : "grid-cols-[2rem_minmax(0,1fr)_auto] @xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem]"
+    ? "grid-cols-[2rem_minmax(0,1fr)_auto] @2xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem] @3xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_minmax(0,10rem)_6rem]"
+    : "grid-cols-[2rem_minmax(0,1fr)_auto] @2xl:grid-cols-[2rem_minmax(0,1fr)_11.5rem_6rem]"
   return (
     <ul className={cn("@container flex flex-col", className)}>
       {items.map((t, i) => {
@@ -340,7 +340,7 @@ function TxnRow({
           <span
             className={cn(
               "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
-              grouped && !t.pending && !tagList.length && "@xl:hidden"
+              grouped && !t.pending && !tagList.length && "@2xl:hidden"
             )}
           >
             {grouped ? null : (
@@ -348,12 +348,12 @@ function TxnRow({
                 <span className="shrink-0 tabular-nums">
                   {shortDate(t.date, today)}
                 </span>
-                <span aria-hidden className="@xl:hidden">
+                <span aria-hidden className="@2xl:hidden">
                   ·
                 </span>
               </>
             )}
-            <span className="relative z-10 flex min-w-0 @xl:hidden">
+            <span className="relative z-10 flex min-w-0 @2xl:hidden">
               {picker("line")}
             </span>
             {t.pending ? (
@@ -370,13 +370,13 @@ function TxnRow({
                 name={tag.name}
                 hue={tag.hue}
                 className={
-                  i > 0 ? "hidden @xl:inline-flex" : "hidden @md:inline-flex"
+                  i > 0 ? "hidden @2xl:inline-flex" : "hidden @md:inline-flex"
                 }
               />
             ))}
           </span>
         </span>
-        <span className="relative z-10 hidden min-w-0 text-sm text-muted-foreground @xl:flex">
+        <span className="relative z-10 hidden min-w-0 text-sm text-muted-foreground @2xl:flex">
           {picker("column")}
         </span>
         {accountColumn ? (
@@ -473,5 +473,65 @@ export function CategorySelect({
       disabled={disabled}
       className={cn(size === "sm" && "h-7", className)}
     />
+  )
+}
+
+/**
+ * Rows of date, category (or account) and amount, for lists where the
+ * merchant is already the page's subject.
+ */
+export function CompactTxnList({
+  items,
+  secondary = "category",
+}: {
+  items: Txn[]
+  secondary?: "category" | "account"
+}) {
+  const categories = useQuery(categoriesQuery).data ?? []
+  const today = useQuery(metaQuery).data?.today
+  return (
+    <ul className="flex flex-col divide-y divide-border/70">
+      {items.map((x) => {
+        const cat = categories.find((c) => c.code === x.category)
+        return (
+          <li key={x.id}>
+            <Link
+              to="/transactions/$id"
+              params={{ id: x.id }}
+              className="grid min-h-11 grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-2 text-sm outline-none hover:bg-muted/60 focus-visible:bg-muted"
+            >
+              <span className="text-muted-foreground tabular-nums">
+                {shortDate(x.date, today)}
+              </span>
+              <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                {secondary === "category" ? (
+                  <CategoryDot color={cat?.color} />
+                ) : null}
+                <span className="truncate">
+                  {secondary === "account"
+                    ? x.accountName
+                    : x.split
+                      ? "Split"
+                      : (cat?.label ?? x.category)}
+                </span>
+                {x.pending ? (
+                  <Badge
+                    variant="outline"
+                    className="h-5 px-1.5 text-[11px] font-normal"
+                  >
+                    Pending
+                  </Badge>
+                ) : null}
+              </span>
+              <Amount
+                cents={x.amountCents}
+                currency={x.currency}
+                className="text-right font-medium"
+              />
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
