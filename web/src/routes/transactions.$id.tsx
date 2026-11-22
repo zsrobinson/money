@@ -262,9 +262,10 @@ function TransactionView({ t }: { t: TxnDetail }) {
         return
       if (e.key === "j" || e.key === "ArrowRight") go(n?.next)
       else if (e.key === "k" || e.key === "ArrowLeft") go(n?.previous)
-      else if (e.key === "r")
-        t.reviewed ? patch.mutate({ reviewed: false }) : reviewNext.mutate()
-      else if (e.key === "c" && !t.splits.length) setPickerOpen(true)
+      else if (e.key === "r") {
+        if (t.reviewed) patch.mutate({ reviewed: false })
+        else reviewNext.mutate()
+      } else if (e.key === "c" && !t.splits.length) setPickerOpen(true)
       else return
       e.preventDefault()
     }
