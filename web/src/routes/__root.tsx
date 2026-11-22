@@ -100,7 +100,7 @@ function Root() {
               active: pathname === "/reports" || at("/reports/categories"),
             },
             link("reports-merchants", "Merchants", "/reports/merchants", null),
-            link("reports-trends", "Trends", "/reports/trends", null),
+            link("reports-builder", "Builder", "/reports/builder", null),
           ],
         }),
       ],

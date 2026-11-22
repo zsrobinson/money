@@ -21,6 +21,7 @@ import { Route as GoalsIndexRouteImport } from './routes/goals.index'
 import { Route as GoalsIdRouteImport } from './routes/goals.$id'
 import { Route as GoalsNewRouteImport } from './routes/goals.new'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
+import { Route as ReportsBuilderRouteImport } from './routes/reports.builder'
 import { Route as ReportsTrendsRouteImport } from './routes/reports.trends'
 import { Route as RulesIndexRouteImport } from './routes/rules.index'
 import { Route as RulesIdRouteImport } from './routes/rules.$id'
@@ -92,6 +93,11 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsBuilderRoute = ReportsBuilderRouteImport.update({
+  id: '/reports/builder',
+  path: '/reports/builder',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsTrendsRoute = ReportsTrendsRouteImport.update({
   id: '/reports/trends',
   path: '/reports/trends',
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
+  '/reports/builder': typeof ReportsBuilderRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
@@ -177,6 +184,7 @@ export interface FileRoutesByTo {
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
+  '/reports/builder': typeof ReportsBuilderRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/accounts/$id': typeof AccountsIdRoute
   '/goals/$id': typeof GoalsIdRoute
   '/goals/new': typeof GoalsNewRoute
+  '/reports/builder': typeof ReportsBuilderRoute
   '/reports/trends': typeof ReportsTrendsRoute
   '/rules/$id': typeof RulesIdRoute
   '/rules/new': typeof RulesNewRoute
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
+    | '/reports/builder'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
+    | '/reports/builder'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/accounts/$id'
     | '/goals/$id'
     | '/goals/new'
+    | '/reports/builder'
     | '/reports/trends'
     | '/rules/$id'
     | '/rules/new'
@@ -301,6 +313,7 @@ export interface RootRouteChildren {
   AccountsIdRoute: typeof AccountsIdRoute
   GoalsIdRoute: typeof GoalsIdRoute
   GoalsNewRoute: typeof GoalsNewRoute
+  ReportsBuilderRoute: typeof ReportsBuilderRoute
   ReportsTrendsRoute: typeof ReportsTrendsRoute
   RulesIdRoute: typeof RulesIdRoute
   RulesNewRoute: typeof RulesNewRoute
@@ -402,6 +415,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports/builder': {
+      id: '/reports/builder'
+      path: '/reports/builder'
+      fullPath: '/reports/builder'
+      preLoaderRoute: typeof ReportsBuilderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/trends': {
       id: '/reports/trends'
       path: '/reports/trends'
@@ -485,6 +505,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountsIdRoute: AccountsIdRoute,
   GoalsIdRoute: GoalsIdRoute,
   GoalsNewRoute: GoalsNewRoute,
+  ReportsBuilderRoute: ReportsBuilderRoute,
   ReportsTrendsRoute: ReportsTrendsRoute,
   RulesIdRoute: RulesIdRoute,
   RulesNewRoute: RulesNewRoute,
